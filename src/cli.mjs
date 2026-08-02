@@ -27,7 +27,7 @@ const HELP = `Commands:
   !clearLog        clear the console
   help | ?         this help - exit | quit`;
 
-const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'revertvm', 'restartvm']);
+const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 'revertvm', 'restartvm']);
 
 // !revertvm / !restartvm are vote-gated in chat: N distinct chatters must
 // request them within VOTE_WINDOW ms before they execute.
