@@ -66,4 +66,6 @@ Colors and role tags can be changed in `src/settings.json` (auto-created on firs
 
 ## Credits
 
-Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`), copied into this repo.
+Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`) - custom-built for OffdisVM.
+
+Enjoying the script? No pressure at all, but if you'd like to help others find it, feel free to share the repo: https://github.com/SynacNipo/Offdis-VM
