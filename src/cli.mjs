@@ -39,6 +39,12 @@ const VOTE_THRESHOLD_KEY = {
 };
 const VOTE_WINDOW = 60000;
 const votes = new Map();
+
+// Shared cooldown for !restartvm / !revertvm (chat spam protection):
+// once either executes, the other is blocked for this long too.
+const VM_OP_COOLDOWN_MS = 15000;
+let lastVmOpAt = 0;
+
 function voteFor(name, author, threshold) {
   const now = Date.now();
   let v = votes.get(name);
@@ -197,16 +203,18 @@ async function execCommand(text) {
       await runImport(arg);
       return { executed: true };
     }
-    case 'restart': case 'restartvm': {
-      const res = await bridge.call('restart', {}, 240000);
-      active = res.name;
-      log.ok(`restarted ${res.name} [${res.stateName}]`);
-      return { executed: true };
-    }
+    case 'restart': case 'restartvm':
     case 'revert': case 'revertvm': {
-      const res = await bridge.call('revert', {}, 240000);
+      // one shared cooldown for both ops: a revert right after a restart is
+      // just as disruptive as back-to-back reverts.
+      const since = Date.now() - lastVmOpAt;
+      if (since < VM_OP_COOLDOWN_MS) {
+        throw new Error(`!${name} is on cooldown - retry in ${Math.ceil((VM_OP_COOLDOWN_MS - since) / 1000)}s`);
+      }
+      const res = await bridge.call(name.startsWith('restart') ? 'restart' : 'revert', {}, 240000);
+      lastVmOpAt = Date.now();
       active = res.name;
-      log.ok(`reverted ${res.name} to snapshot [${res.stateName}]`);
+      log.ok(`${name.startsWith('restart') ? 'restarted' : 'reverted'} ${res.name} [${res.stateName}]`);
       return { executed: true };
     }
     default:
