@@ -433,7 +433,16 @@ async function handle(line) {
       }
     }
     try {
-      await queueExec(() => execCommand(line));
+      await queueExec(async () => {
+        const cmds = parseChatCommands(line);
+        if (cmds.length <= 1) {
+          await execCommand(line);
+        } else {
+          for (const c of cmds) {
+            await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim());
+          }
+        }
+      });
       log.ok(line);
     } catch (err) {
       log.err(err.message);
