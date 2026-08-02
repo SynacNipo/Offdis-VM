@@ -66,4 +66,4 @@ Colors and role tags can be changed in `src/settings.json` (auto-created on firs
 
 ## Credits
 
-Live chat polling uses the vendored [modern-youtubechat](https://github.com/SynacNipo/modern-youtubechat) project (`modern-youtubechat/dist/client.js`).
+Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`), copied into this repo.
