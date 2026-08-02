@@ -4,7 +4,6 @@ Zero-dependency Node.js console that controls VirtualBox VMs through the Virtual
 
 ## Requirements
 
-- Windows
 - [VirtualBox](https://www.virtualbox.org/) 7.x installed (default `C:\Program Files\Oracle\VirtualBox`)
 - [Node.js](https://nodejs.org/) 18 or newer
 - A VM created in VirtualBox (settings.json, snapshots, etc. are all regular VirtualBox features)
