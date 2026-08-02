@@ -197,13 +197,13 @@ async function execCommand(text) {
       return { executed: true };
     }
     case 'restartvm': {
-      const res = await bridge.call('restart');
+      const res = await bridge.call('restart', {}, 240000);
       active = res.name;
       log.ok(`restarted ${res.name} [${res.stateName}]`);
       return { executed: true };
     }
     case 'revertvm': {
-      const res = await bridge.call('revert');
+      const res = await bridge.call('revert', {}, 240000);
       active = res.name;
       log.ok(`reverted ${res.name} to snapshot [${res.stateName}]`);
       return { executed: true };

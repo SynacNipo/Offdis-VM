@@ -133,6 +133,26 @@ function Select-Machine($name) {
     return [PSCustomObject]@{ name = $name; state = $resolved.state; stateName = $resolved.stateName; realName = $resolved.realName; locked = $true }
 }
 
+function Invoke-VBoxManage([string[]]$vmArgs) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $script:vboxManage
+    $psi.Arguments = (($vmArgs | ForEach-Object {
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }) -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    $lines = @()
+    if ($stdout) { $lines += ($stdout -split "`r?`n") }
+    if ($stderr) { $lines += ($stderr -split "`r?`n") }
+    return [PSCustomObject]@{ exit = $p.ExitCode; lines = $lines }
+}
+
 function Start-Machine($name) {
     if ([string]::IsNullOrWhiteSpace($name)) { throw 'usage: start <vm name>' }
     Close-Session
@@ -142,9 +162,16 @@ function Start-Machine($name) {
     if ($st -eq 1 -or $st -eq 2 -or $st -eq 4) {
         # PowerShell COM binding cannot marshal LaunchVMProcess (DISP_E_TYPEMISMATCH),
         # so launch via VBoxManage and keep the Main API for everything else.
+        # Start it as a separate process - COM session wrappers in THIS process
+        # keep the machine locked right after poweroff otherwise.
         if (-not (Test-Path $script:vboxManage)) { throw 'VBoxManage not found - cannot start VM' }
-        $out = & $script:vboxManage startvm $name --type gui 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "VBoxManage startvm failed: $($out -join ' ')" }
+        $started = $false
+        for ($i = 0; $i -lt 60 -and -not $started; $i++) {
+            $r = Invoke-VBoxManage @('startvm', $name, '--type', 'gui')
+            if ($r.exit -eq 0) { $started = $true }
+            else { Start-Sleep -Milliseconds 2000 }
+        }
+        if (-not $started) { throw "VBoxManage startvm failed: $($r.lines -join ' ')" }
         for ($i = 0; $i -lt 30; $i++) {
             $real = Get-RealStateName $name
             if ($real -in @('running', 'starting', 'paused', 'saving')) { break }
@@ -233,15 +260,16 @@ function Stop-And-Wait($name) {
     $st = [int]$machine.State
     if ($st -in @(5, 6, 8)) {
         $s = New-Object -ComObject VirtualBox.Session
-        $machine.LockMachine($s, 1)
         try {
+            $machine.LockMachine($s, 1)
             $s.Console.PowerDown() | Out-Null
             $s.UnlockMachine() | Out-Null
-        } catch {
-            try { $s.UnlockMachine() | Out-Null } catch { }
-        }
+        } catch { }
+        # A stale session wrapper left in this process keeps the machine
+        # locked long after poweroff - release it explicitly.
+        try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($s) | Out-Null } catch { }
     }
-    for ($i = 0; $i -lt 60; $i++) {
+    for ($i = 0; $i -lt 120; $i++) {
         $real = Get-RealStateName $name
         if ($real -in @('poweroff', 'saved', 'aborted')) { return }
         Start-Sleep -Milliseconds 500
@@ -262,8 +290,8 @@ function Invoke-Revert {
     if ($null -eq $machine.CurrentSnapshot) { throw 'VM has no snapshots to revert to' }
     if (-not (Test-Path $script:vboxManage)) { throw 'VBoxManage not found - cannot revert' }
     Stop-And-Wait $name
-    $out = & $script:vboxManage snapshot $name restorecurrent 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "VBoxManage snapshot restore failed: $($out -join ' ')" }
+    $r = Invoke-VBoxManage @('snapshot', $name, 'restorecurrent')
+    if ($r.exit -ne 0) { throw "VBoxManage snapshot restore failed: $($r.lines -join ' ')" }
     return Start-Machine $name
 }
 
