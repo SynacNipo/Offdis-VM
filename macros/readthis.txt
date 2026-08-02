@@ -18,8 +18,8 @@ Any chatter can now type:   !import minecraft
 HOW IT WORKS
 ------------
 - Every line is one command: !key, !type, !send, !combo, !import, !wait
-- !wait <ms> pauses the sequence (max 10000). Chat can't use !wait
-  directly - only macros can. Great for boot/loading times.
+- !wait <dur> pauses the sequence - 500ms, 2s, or plain 3 (=3000ms), max 10s.
+  Chat can't use !wait directly - only macros can. Great for boot/loading times.
 - The whole macro runs as ONE uninterrupted unit: other chatters'
   commands wait in line and can't cut in mid-sequence.
 - Macros can call other macros (!import other), up to 3 levels deep.

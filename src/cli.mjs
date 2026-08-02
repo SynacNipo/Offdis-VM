@@ -20,6 +20,7 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   type <text>      type text into the VM (no Enter)
   send <text>      type text and press Enter
   combo <chord>    key combo with hold:  combo win+r
+  wait <dur>       pause:  500ms, 2s, 3 (ms) - max 10s
   import <name>    run a macro from macros/  (e.g. import this)
   startvm          start / activate a VM (also: start <name>, alias: start)
   revertvm         revert to latest snapshot (chat: N votes to trigger, alias: revert)
@@ -64,6 +65,22 @@ function isShadowbanned(name) {
   return true;
 }
 
+// Chat action rate limit: a chatter firing commands faster than RATE_MAX
+// messages within RATE_WINDOW gets those actions ignored (spam protection,
+// e.g. one user looping !combo win+r ... chains to hold the queue hostage).
+const RATE_WINDOW_MS = 2000;
+const RATE_MAX = 4;
+const rateHits = new Map(); // lowercased author -> [timestamps]
+function isRateLimited(author) {
+  const key = author.toLowerCase();
+  const now = Date.now();
+  let hits = rateHits.get(key);
+  if (!hits) { hits = []; rateHits.set(key, hits); }
+  while (hits.length && now - hits[0] > RATE_WINDOW_MS) hits.shift();
+  hits.push(now);
+  return hits.length >= RATE_MAX;
+}
+
 // Shared cooldown for !restartvm / !revertvm (chat spam protection):
 // once either executes, the other is blocked for this long too.
 const VM_OP_COOLDOWN_MS = 15000;
@@ -81,12 +98,16 @@ function voteFor(name, author, threshold) {
   return v.by.size;
 }
 
-// Typing speed knobs. Per putScancodes call costs ~12ms; consecutive
-// shift-free chars are merged into small bursts to amortize that. TYPE_DELAY
-// is the gap between bursts INSIDE the bridge (no RTT per char anymore).
-// Measured on this guest: ~160 codes/s sustained DROPS keys; ~50/s is safe.
-const TYPE_BURST = 2;
-const TYPE_DELAY = 50;
+// Typing speed knobs. Per putScancodes call costs ~12ms, so batching many
+// chars per call is the real speed lever (one PDM-queue insert per code, no
+// wait). TYPE_DELAY is the gap between bursts INSIDE the bridge (no RTT per
+// char anymore). The pipe accepts far more than we send; the only limit is
+// the guest's 64-byte PS/2 keyQ when it stalls (see bridge.ps1 Send-Codes
+// retry). Measured on this guest: ~160 codes/s sustained DROPS keys; ~50/s
+// is safe. 8-char bursts at 35ms ≈ ~170 codes/s - over the old drop point,
+// but the bridge retries partial sends instead of silently dropping.
+const TYPE_BURST = 8;
+const TYPE_DELAY = 35;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -147,10 +168,19 @@ const idleWaiters = [];
 
 function queueExec(fn, priority = false) {
   return new Promise((resolve, reject) => {
-    if (priority) execTasks.unshift(() => Promise.resolve().then(fn).then(resolve, reject));
-    else execTasks.push(() => Promise.resolve().then(fn).then(resolve, reject));
+    const run = () => Promise.resolve().then(fn).then(resolve, reject);
+    run.cancel = () => resolve();
+    if (priority) execTasks.unshift(run);
+    else execTasks.push(run);
     pump();
   });
+}
+
+// Drops all pending queued commands (e.g. chat commands still waiting when
+// !live stop arrives). The currently executing command finishes; the rest are
+// silently resolved so no caller hangs and nothing runs in the guest.
+function clearExecQueue() {
+  while (execTasks.length) execTasks.shift().cancel();
 }
 
 async function pump() {
@@ -261,8 +291,11 @@ async function execCommand(text) {
       return { executed: true };
     }
     case 'wait': {
-      const ms = parseInt(arg, 10);
-      if (!Number.isNaN(ms)) await sleep(Math.min(Math.max(ms, 0), 10000));
+      const m = /^\s*(\d+(?:\.\d+)?)\s*(s|sec|seconds|ms|millis)?\s*$/i.exec(arg);
+      let ms = m ? parseFloat(m[1]) * (m[2] && /^s/i.test(m[2]) ? 1000 : 1) : NaN;
+      const minMs = settings.wait?.minMs ?? 0;
+      const maxMs = settings.wait?.maxMs ?? 10000;
+      if (!Number.isNaN(ms)) await sleep(Math.min(Math.max(ms, minMs), maxMs));
       return { executed: true };
     }
     case 'start': case 'startvm': {
@@ -275,6 +308,11 @@ async function execCommand(text) {
       }
       const res = await bridge.call('start', { name }, 240000);
       active = res.name;
+      if (!res.launched) {
+        log.warn(`${res.name} is already active [${res.stateName}] - nothing to start`);
+      } else {
+        log.ok(`started ${res.name} [${res.stateName}]`);
+      }
       return { executed: true };
     }
     case 'import': {
@@ -300,6 +338,10 @@ async function execCommand(text) {
       const res = await bridge.call(name.startsWith('restart') ? 'restart' : 'revert', {}, 240000);
       lastVmOpAt = Date.now();
       active = res.name;
+      // The VM is coming back fresh: any commands that piled up while the op
+      // ran would just drain into a brand-new state (or a VM that's mid-boot).
+      // Dump them so nothing queued survives a restart/revert.
+      clearExecQueue();
       log.ok(`${name.startsWith('restart') ? 'restarted' : 'reverted'} ${res.name} [${res.stateName}]`);
       return { executed: true };
     }
@@ -312,10 +354,10 @@ async function setActive(name) {
   try {
     const res = await bridge.call('start', { name });
     active = res.name;
-    if (res.state === 1) {
+    if (res.launched) {
       log.info(`launching ${res.name} ... (was powered off)`);
     } else {
-      log.ok(`active: ${res.name} [${res.stateName}]`);
+      log.warn(`active: ${res.name} [${res.stateName}] - already running`);
     }
   } catch (err) {
     log.err(`failed: ${err.message}`);
@@ -416,6 +458,12 @@ function onChatMessage(msg) {
   log.chat({ tag: tag ? `${tag} ` : '', author, message: msg.message });
   const cmds = parseChatCommands(msg.message);
   if (!cmds.length) return;
+  // Rate limit: >= RATE_MAX command messages from one chatter within
+  // RATE_WINDOW ms are ignored (action spam - the 4th hit is the trigger).
+  if (isRateLimited(author)) {
+    log.warn(`@${author} rate-limited - action ignored`);
+    return;
+  }
   // One whole message's command chain executes as a single serialized unit,
   // so concurrent chatters can never interleave keystrokes in the guest.
   queueExec(async () => {
@@ -476,6 +524,9 @@ function onChatMessage(msg) {
     votes.delete(name);
     log.ok(`!${typedName} triggered by ${n} votes`);
     const t0 = Date.now();
+    // Priority lane: a vote-passed VM op must not wait behind a backlog of
+    // typing spam (that's the 12-minute lag from the logs) - it jumps the
+    // queue, then execCommand dumps whatever is still queued behind it.
     queueExec(async () => {
       if (!(await ensureActive())) {
         log.warn(`no running VM - !${typedName} ignored`);
@@ -487,7 +538,7 @@ function onChatMessage(msg) {
       } catch (err) {
         log.err(`Failed : "!${typedName}": ${err.message}`);
       }
-    });
+    }, true);
   }
 }
 
@@ -496,6 +547,7 @@ async function cmdLive(arg) {
     if (liveAbort) {
       liveAbort();
       liveAbort = null;
+      clearExecQueue();
       log.info('stopping live chat...');
       saveSessionLog();
     } else {

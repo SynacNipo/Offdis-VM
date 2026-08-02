@@ -158,8 +158,10 @@ function Start-Machine($name) {
     Close-Session
     $machine = (Get-VBox).FindMachine($name)
     $st = [int]$machine.State
+    $launched = $false
     $s = New-Object -ComObject VirtualBox.Session
     if ($st -eq 1 -or $st -eq 2 -or $st -eq 4) {
+        $launched = $true
         # PowerShell COM binding cannot marshal LaunchVMProcess (DISP_E_TYPEMISMATCH),
         # so launch via VBoxManage and keep the Main API for everything else.
         # Start it as a separate process - COM session wrappers in THIS process
@@ -192,7 +194,7 @@ function Start-Machine($name) {
     $script:session = $s
     $script:sessionVM = $name
     $resolved = Resolve-State $st $name
-    return [PSCustomObject]@{ name = $name; state = $resolved.state; stateName = $resolved.stateName; realName = $resolved.realName; locked = $true }
+    return [PSCustomObject]@{ name = $name; state = $resolved.state; stateName = $resolved.stateName; realName = $resolved.realName; launched = $launched; locked = $true }
 }
 
 function Get-Info($name) {
@@ -227,10 +229,35 @@ function Assert-ActiveSession {
     }
 }
 
+# Sends scancodes to the active VM's keyboard with backoff+retry on a full
+# queue. putScancodes returns codesStored (count actually accepted into the
+# PDM queue) and throws VBOX_E_IPRT_ERROR (0x80BB000C) when the queue is
+# full - e.g. a CPU-pegged guest that stopped draining its 64-byte PS/2
+# buffer. Never assume delivery: retry the unsent tail, not the whole batch.
+function Send-CodesWithRetry($kbd, [int[]]$codes, [int]$maxRetries = 8, [int]$backoffMs = 30) {
+    $sent = 0
+    $attempt = 0
+    while ($sent -lt $codes.Length) {
+        $stored = -1
+        try {
+            $tail = [int[]]$codes[$sent..($codes.Length - 1)]
+            $stored = $kbd.putScancodes($tail)
+            if ($null -ne $stored) { $sent += [int]$stored }
+        } catch {
+            $stored = -1
+        }
+        if ($sent -ge $codes.Length) { return $sent }
+        $attempt++
+        if ($attempt -gt $maxRetries) { throw "keyboard queue full - dropped $($codes.Length - $sent)/$($codes.Length) codes" }
+        Start-Sleep -Milliseconds $backoffMs
+    }
+    return $sent
+}
+
 function Invoke-Key($codes) {
     Assert-ActiveSession
     $kbd = $script:session.Console.Keyboard
-    $kbd.putScancodes([int[]]$codes) | Out-Null
+    Send-CodesWithRetry $kbd ([int[]]$codes) | Out-Null
     return $true
 }
 
@@ -242,7 +269,7 @@ function Invoke-Type($groups, $delayMs) {
     $kbd = $script:session.Console.Keyboard
     $delay = [int]$delayMs
     foreach ($g in $groups) {
-        $kbd.putScancodes([int[]]$g) | Out-Null
+        Send-CodesWithRetry $kbd ([int[]]$g) | Out-Null
         if ($delay -gt 0) { Start-Sleep -Milliseconds $delay }
     }
     return $true

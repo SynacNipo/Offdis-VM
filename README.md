@@ -36,7 +36,7 @@ help | ?             this help - exit | quit
 
 At the prompt the `!` prefix is optional for exec commands (`key enter` = `!key enter`); chat always needs it.
 
-Chat can post `!key`, `!type`, `!send`, `!combo`, `!import`, `!wait`, `!startvm`, `!restartvm`, `!revertvm`, `!voteban <author>` - chains of commands in one message run atomically. `!startvm` boots a powered-off VM. `!restartvm` / `!revertvm` / `!voteban` are vote-gated (2 votes) and the VM ops share a 15 s cooldown. Macros live in `macros/` (see `macros/readthis.txt`).
+Chat can post `!key`, `!type`, `!send`, `!combo`, `!import`, `!wait <dur>` (e.g. `!wait 2s`), `!startvm`, `!restartvm`, `!revertvm`, `!voteban <author>` - chains of commands in one message run atomically. `!startvm` boots a powered-off VM. `!restartvm` / `!revertvm` / `!voteban` are vote-gated (2 votes) and the VM ops share a 15 s cooldown. Macros live in `macros/` (see `macros/readthis.txt`).
 
 More details for everything above: **[[wiki]](https://github.com/SynacNipo/Offdis-VM/wiki)**
 
