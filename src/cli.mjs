@@ -32,7 +32,7 @@ const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 
 
 // At the CLI prompt the `!` prefix is optional for these (chat still needs it).
 const BARE_COMMANDS = new Set(['key', 'type', 'send', 'combo', 'import', 'wait',
-  'restart', 'restartvm', 'revert', 'revertvm', 'voteban']);
+  'restart', 'restartvm', 'revert', 'revertvm', 'voteban', 'live', 'clearLog']);
 
 // !revertvm / !restartvm / !voteban are vote-gated in chat: N distinct
 // chatters must request them within VOTE_WINDOW ms before they execute.
@@ -540,6 +540,8 @@ async function handle(line) {
   const [word, ...cmdArgs] = line.split(/\s+/);
   const bare = (word || '').toLowerCase();
   if (BARE_COMMANDS.has(bare)) {
+    if (bare === 'live') return cmdLive(cmdArgs.join(' '));
+    if (bare === 'clearLog') return term.clear();
     if (bare === 'key') {
       const arg = cmdArgs.join(' ');
       if (!arg) {
