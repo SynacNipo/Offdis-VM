@@ -2,6 +2,8 @@
 
 Zero-dependency Node.js console that controls VirtualBox VMs through the VirtualBox Main API (via a PowerShell COM bridge) - with YouTube live-chat command control.
 
+📖 **Full documentation: [wiki](https://github.com/SynacNipo/Offdis-VM/wiki)** (commands, macros, voting, snapshots, configuration)
+
 ## Requirements
 
 - [VirtualBox](https://www.virtualbox.org/) 7.x installed (default `C:\Program Files\Oracle\VirtualBox`)
@@ -20,63 +22,25 @@ npm start
 
 That's it. No `npm install`, no node_modules.
 
-## Usage
-
-Start the CLI, pick your VM from the `list` menu, and control it:
+## Quick start
 
 ```
 list                 VM picker (arrows + Enter) - auto-starts if powered off
-info [<name>]        show VM details
-pause | resume       pause / resume the active VM
-stop                 power off the active VM (ACPI)
-!key <key>           send a key:  !key enter - !key ctrl+alt+del - !key ? = all keys
-!type <text>         type text into the VM (no Enter)
-!send <text>         type text and press Enter
-!combo <chord>       key combo with hold:  !combo win+r
-!import <name>       run a macro from src/imports/ (e.g. !import this)
-!revertvm            revert to the latest snapshot
-!restartvm           restart the VM
+!key enter           send a key (also: !key ctrl+alt+del - !key ? = all keys)
+!type hello          type text (no Enter)
+!send notepad        type text + Enter
+!combo win+r         key combo with hold
 !live <videoId>      connect YouTube live chat - !live stop to disconnect
-!clearLog            clear the console
 help | ?             this help - exit | quit
 ```
 
-If no VM is active when a command runs, the first running VM is auto-selected.
+Chat can post `!key`, `!type`, `!send`, `!combo`, `!import`, `!wait`, `!restartvm`, `!revertvm` - chains of commands in one message run atomically. `!restartvm` / `!revertvm` are vote-gated (2 votes) and share a 15 s cooldown. Macros live in `macros/` (see `macros/readthis.txt`).
 
-## YouTube live chat control
-
-Viewers in your live chat can drive the VM by posting commands - `!key`, `!type`, `!send`, `!combo`, `!import` and `!wait` (max 10s, e.g. to let a program boot). Commands are fully open by design: anyone in chat can type, so use VirtualBox snapshots as your safety net. Chat roles are shown as `[Mod]` / `[Owner]` tags.
-
-`!revertvm` and `!restartvm` are vote-gated in chat: a minimum number of distinct chatters must request the command (default **2**) before it triggers. `!revert` and `!restart` work as shorthand aliases. Configure the thresholds in `src/settings.json`:
-
-```json
-"voting": {
-  "revertVMVoteThreshold": 2,
-  "restartVMVoteThreshold": 2
-}
-```
-
-`!revertvm` reverts the active VM to its latest snapshot (graceful ACPI shutdown first, then snapshot restore, then relaunch - takes ~2 minutes). `!restartvm` is a hard reset, like pressing the reset button: the guest is rebooted instantly with no clean shutdown, so it works even when the guest is hung (takes only a few seconds).
-
-Macros are simple text files in `macros/` (see `macros/readthis.txt`):
-
-```
-# comments start with #
-!combo win+r
-!wait 1000
-!type notepad
-!key enter
-```
-
-Anyone in chat can run one with `!import minecraft` - the whole sequence runs as a single uninterrupted unit (see `macros/readthis.txt`).
+More details for everything above: **[[wiki]](https://github.com/SynacNipo/Offdis-VM/wiki)**
 
 ## Session logs
 
 Every session's console output is saved automatically to `logs/` (a timestamped file) when you exit (Ctrl+C) or run `!live stop`.
-
-## Configuration
-
-Colors and role tags can be changed in `src/settings.json` (auto-created on first run).
 
 ## Credits
 
