@@ -214,11 +214,19 @@ async function execCommand(text) {
       return { executed: true };
     }
     case 'type': {
+      const cap = settings.typing?.maxLength ?? 0;
+      if (cap > 0 && arg.length > cap) {
+        throw new Error(`!type text is too long (${arg.length} chars, max ${cap})`);
+      }
       const bursts = burstGroups(textToGroups(arg), TYPE_BURST);
       await bridge.call('type', { groups: bursts, delay: TYPE_DELAY });
       return { executed: true };
     }
     case 'send': {
+      const cap = settings.typing?.maxLength ?? 0;
+      if (cap > 0 && arg.length > cap) {
+        throw new Error(`!send text is too long (${arg.length} chars, max ${cap})`);
+      }
       const groups = textToGroups(arg);
       if (groups.length) groups[groups.length - 1].push(0x1c, 0x9c);
       const bursts = burstGroups(groups, TYPE_BURST);

@@ -14,7 +14,7 @@ await setActive(vm);
 console.log('\n=== 1) direct !restartvm ===');
 await execCommand('!restartvm');
 console.log('restart OK, VM is back');
-await sleep(1500);
+await sleep(17000); // wait out the shared 15s VM-op cooldown
 
 console.log('\n=== 2) vote-triggered !restartvm (threshold 2) ===');
 const t0 = Date.now();
@@ -23,7 +23,7 @@ await sleep(300);
 onChatMessage({ author: { name: 'voter2' }, role: 'normal', message: '!restartvm' });
 await whenIdle();
 console.log(`vote-triggered restart finished in ${Date.now() - t0}ms`);
-await sleep(1500);
+await sleep(17000); // wait out the cooldown again
 
 console.log('\n=== 3) direct !revertvm ===');
 await execCommand('!revertvm');

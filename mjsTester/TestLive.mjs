@@ -1,6 +1,6 @@
 import { initLiveChat, pollChat } from '../modern-youtubechat/dist/client.js';
 
-const videoId = 'O-dl8bXc1q8';
+const videoId = process.argv[2] || 'E1u1s-zU85U';
 const timeoutMs = 30000;
 const started = Date.now();
 

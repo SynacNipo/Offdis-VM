@@ -25,6 +25,10 @@ const DEFAULT_SETTINGS = {
     votebanVoteThreshold: 2,
     votebanDurationSeconds: 300,
   },
+  typing: {
+    // Max chars for !type / !send text. 0 = no limit (default).
+    maxLength: 0,
+  },
 };
 
 const ANSI = {
