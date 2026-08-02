@@ -56,7 +56,7 @@ Viewers in your live chat can drive the VM by posting commands - `!key`, `!type`
 }
 ```
 
-`!revertvm` reverts the active VM to its latest snapshot; `!restartvm` powers it off and back on. Both stop the VM first, wait for it to fully power down, then relaunch it.
+`!revertvm` reverts the active VM to its latest snapshot (graceful ACPI shutdown first, then snapshot restore, then relaunch - takes ~2 minutes). `!restartvm` is a hard reset, like pressing the reset button: the guest is rebooted instantly with no clean shutdown, so it works even when the guest is hung (takes only a few seconds).
 
 Macros are simple text files in `src/imports/`:
 

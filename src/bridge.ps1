@@ -278,8 +278,17 @@ function Stop-And-Wait($name) {
 }
 
 function Invoke-Restart {
+    # hard reset (like pressing the reset button / Host+R): the guest gets no
+    # chance to shut down cleanly, but it works even when the guest is hung.
+    # The machine process survives, so this is far faster than stop + boot.
     $name = $script:sessionVM
-    Stop-And-Wait $name
+    if ([string]::IsNullOrWhiteSpace($name)) { throw 'no active VM - use start <name> first' }
+    if (-not (Test-Path $script:vboxManage)) { throw 'VBoxManage not found - cannot restart' }
+    $r = Invoke-VBoxManage @('controlvm', $name, 'reset')
+    if ($r.exit -ne 0) { throw "VBoxManage reset failed: $($r.lines -join ' ')" }
+    Start-Sleep -Seconds 3
+    # the console session is dropped by the reset; re-lock the machine
+    Close-Session
     return Start-Machine $name
 }
 

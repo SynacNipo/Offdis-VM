@@ -288,6 +288,7 @@ async function cmdPauseResume(op, word) {
 
 // If no VM is active, auto-select the first running one so chat commands
 // don't get dropped just because the picker was skipped.
+// Also locks the bridge session so commands actually work after auto-select.
 async function ensureActive() {
   if (active) return true;
   try {
@@ -295,6 +296,7 @@ async function ensureActive() {
     const run = vms.find((v) => v.name && !v.name.startsWith('<') &&
       ((v.realName || '').toLowerCase() === 'running' || v.stateName === 'Running'));
     if (!run) return false;
+    await bridge.call('select', { name: run.name });
     active = run.name;
     log.ok(`auto-selected: ${run.name} [${run.stateName}]`);
     return true;
@@ -310,7 +312,7 @@ function onChatMessage(msg) {
   const tag = msg.role === 'owner' ? log.tag('owner')
     : msg.role === 'moderator' ? log.tag('mod') : '';
   const author = msg.author.name.replace(/^@/, '');
-  log.chat(`${tag ? `${tag} ` : ''}@${author} : ${msg.message}`);
+  log.chat({ tag: tag ? `${tag} ` : '', author, message: msg.message });
   const cmds = parseChatCommands(msg.message);
   if (!cmds.length) return;
   // One whole message's command chain executes as a single serialized unit,

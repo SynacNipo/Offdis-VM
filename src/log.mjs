@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS = {
     warn: 'yellow',
     err: 'darkred',
     info: 'cyan',
-    chat: 'gray',
+    chat: 'auto',
     mod: 'blue',
     owner: 'orange',
   },
@@ -38,6 +38,39 @@ const ANSI = {
 };
 
 const useColor = !!process.stdout.isTTY;
+// 24-bit true color when the terminal supports it (Windows Terminal, etc.)
+const useTrueColor = useColor && (!!process.env.WT_SESSION ||
+  process.env.COLORTERM === 'truecolor' || process.env.COLORTERM === '24bit');
+
+function hslToRgb(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+// Stable per-author color: same chatter always gets the same hue.
+const authorColors = new Map();
+function authorColor(name) {
+  if (!authorColors.has(name)) {
+    let h = 0;
+    for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
+    if (useTrueColor) {
+      const [r, g, b] = hslToRgb(h, 0.7, 0.55);
+      authorColors.set(name, `\x1b[38;2;${r};${g};${b}m`);
+    } else {
+      authorColors.set(name, `\x1b[3${(h / 360 * 6) | 0}m`);
+    }
+  }
+  return authorColors.get(name);
+}
 
 function loadSettings() {
   try {
@@ -96,7 +129,20 @@ export const log = {
     emit(`${stamp()} ${paint('info', msg)}`);
   },
   chat(msg) {
-    emit(`${stamp()} ${paint('chat', msg)}`);
+    // 'auto' mode: color each chatter's name with a stable hue from the
+    // 24-bit palette; set colors.chat to a color name for a single color.
+    if (settings.colors.chat === 'auto' && msg && typeof msg === 'object' && msg.author) {
+      const prefix = msg.tag || '';
+      const colored = useColor
+        ? `${authorColor(msg.author)}@${msg.author}${ANSI.reset}`
+        : `@${msg.author}`;
+      emit(`${stamp()} ${prefix}${colored} : ${msg.message}`);
+      return;
+    }
+    const text = msg && typeof msg === 'object'
+      ? `${msg.tag || ''}@${msg.author} : ${msg.message}`
+      : String(msg);
+    emit(`${stamp()} ${paint('chat', text)}`);
   },
   plain(msg) {
     emit(msg);
