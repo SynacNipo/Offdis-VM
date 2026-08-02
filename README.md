@@ -26,13 +26,15 @@ That's it. No `npm install`, no node_modules.
 
 ```
 list                 VM picker (arrows + Enter) - auto-starts if powered off
-!key enter           send a key (also: !key ctrl+alt+del - !key ? = all keys)
-!type hello          type text (no Enter)
-!send notepad        type text + Enter
-!combo win+r         key combo with hold
-!live <videoId>      connect YouTube live chat - !live stop to disconnect
+key enter            send a key (also: key ctrl+alt+del - key ? = all keys)
+type hello           type text (no Enter)
+send notepad         type text + Enter
+combo win+r          key combo with hold
+live <videoId>       connect YouTube live chat - live stop to disconnect
 help | ?             this help - exit | quit
 ```
+
+At the prompt the `!` prefix is optional for exec commands (`key enter` = `!key enter`); chat always needs it.
 
 Chat can post `!key`, `!type`, `!send`, `!combo`, `!import`, `!wait`, `!restartvm`, `!revertvm`, `!voteban <author>` - chains of commands in one message run atomically. `!restartvm` / `!revertvm` / `!voteban` are vote-gated (2 votes) and the VM ops share a 15 s cooldown. Macros live in `macros/` (see `macros/readthis.txt`).
 

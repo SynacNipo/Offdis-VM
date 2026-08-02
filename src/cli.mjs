@@ -11,23 +11,28 @@ import { runLiveLoop } from './livechat.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IMPORTS_DIR = path.join(__dirname, '..', 'macros');
 
-const HELP = `Commands:
+const HELP = `Commands: (! optional at this prompt - chat requires it)
   list             VM picker (arrows + Enter) - auto-starts if powered off
   info [<name>]    show VM details
   pause | resume   pause / resume the active VM
   stop             power off the active VM (ACPI)
-  !key <key>       send a key:  !key enter - !key ctrl+alt+del - !key ? = all keys
-  !type <text>     type text into the VM (no Enter)
-  !send <text>     type text and press Enter
-  !combo <chord>   key combo with hold:  !combo win+r
-  !import <name>   run a macro from imports/  (e.g. !import this)
-  !revertvm        revert to latest snapshot (chat: N votes to trigger, alias: !revert)
-  !restartvm       restart the VM (chat: N votes to trigger, alias: !restart)
-  !live <videoId>  connect YouTube live chat - !live stop to disconnect
-  !clearLog        clear the console
+  key <key>        send a key:  key enter - key ctrl+alt+del - key ? = all keys
+  type <text>      type text into the VM (no Enter)
+  send <text>      type text and press Enter
+  combo <chord>    key combo with hold:  combo win+r
+  import <name>    run a macro from macros/  (e.g. import this)
+  revertvm         revert to latest snapshot (chat: N votes to trigger, alias: revert)
+  restartvm        restart the VM (chat: N votes to trigger, alias: restart)
+  voteban <author> shadowban a chatter (chat: N votes to trigger)
+  live <videoId>   connect YouTube live chat - live stop to disconnect
+  clearLog         clear the console
   help | ?         this help - exit | quit`;
 
 const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 'revertvm', 'restartvm']);
+
+// At the CLI prompt the `!` prefix is optional for these (chat still needs it).
+const BARE_COMMANDS = new Set(['key', 'type', 'send', 'combo', 'import', 'wait',
+  'restart', 'restartvm', 'revert', 'revertvm', 'voteban']);
 
 // !revertvm / !restartvm / !voteban are vote-gated in chat: N distinct
 // chatters must request them within VOTE_WINDOW ms before they execute.
@@ -113,13 +118,40 @@ async function sendCodes(codes) {
 
 // Serializes WHOLE command executions (typing streams, combos, macros) so two
 // chat commands can never interleave their keystrokes into the guest.
-let execQueue = Promise.resolve();
-function queueExec(fn) {
-  const p = execQueue.then(fn, fn);
-  execQueue = p.catch(() => { });
-  return p;
+// queueExec(priority=true) inserts at the FRONT of the queue: the next unit
+// after the currently running one, so CLI input never waits behind chat spam.
+const execTasks = [];
+let execRunning = false;
+const idleWaiters = [];
+
+function queueExec(fn, priority = false) {
+  return new Promise((resolve, reject) => {
+    if (priority) execTasks.unshift(() => Promise.resolve().then(fn).then(resolve, reject));
+    else execTasks.push(() => Promise.resolve().then(fn).then(resolve, reject));
+    pump();
+  });
 }
-function whenIdle() { return execQueue; }
+
+async function pump() {
+  if (execRunning) return;
+  execRunning = true;
+  try {
+    while (execTasks.length) {
+      const t = execTasks.shift();
+      // Errors are surfaced to the task's own caller (chat/CLI log them);
+      // the pump itself must never reject or the queue dies.
+      try { await t(); } catch { /* handled by the caller */ }
+    }
+  } finally {
+    execRunning = false;
+    for (const r of idleWaiters.splice(0)) r();
+  }
+}
+
+function whenIdle() {
+  if (!execTasks.length && !execRunning) return Promise.resolve();
+  return new Promise((r) => idleWaiters.push(r));
+}
 
 function parseChatCommands(text) {
   const tokens = text.split(/\s+/).filter(Boolean);
@@ -352,7 +384,7 @@ function onChatMessage(msg) {
   queueExec(async () => {
     if (!(await ensureActive())) {
       log.warn('no running VM - chat commands ignored');
-      return;
+    return;
     }
     for (const c of cmds) {
       const name = c.cmd.slice(1).toLowerCase();
@@ -477,6 +509,8 @@ async function handle(line) {
       }
     }
     try {
+      const t0 = Date.now();
+      log.info(`Executing : "[CLI] ${line}"`);
       await queueExec(async () => {
         const cmds = parseChatCommands(line);
         if (cmds.length <= 1) {
@@ -486,8 +520,50 @@ async function handle(line) {
             await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim());
           }
         }
-      });
-      log.ok(line);
+      }, true);
+      log.ok(`Executed : "[CLI] ${line}" Time: ${Date.now() - t0}ms`);
+    } catch (err) {
+      log.err(err.message);
+    }
+    return;
+  }
+  // Bare command names: `!` is optional for exec commands at the prompt
+  // (chat still requires it so plain messages stay chat).
+  const [word, ...cmdArgs] = line.split(/\s+/);
+  const bare = (word || '').toLowerCase();
+  if (BARE_COMMANDS.has(bare)) {
+    if (bare === 'key') {
+      const arg = cmdArgs.join(' ');
+      if (!arg) {
+        term.write('usage: key <key>   e.g. key enter - key ctrl+alt+del - key ? = all keys');
+        return;
+      }
+      if (arg === '?') {
+        term.write('supported keys:\n  ' + keyNames().join(' '));
+        return;
+      }
+    }
+    if (!active && CHAT_ALLOWED.has(bare)) {
+      if (!(await ensureActive())) {
+        log.warn('no running VM - pick one with list');
+        return;
+      }
+    }
+    try {
+      const t0 = Date.now();
+      const lineWithBang = '!' + line;
+      log.info(`Executing : "[CLI] ${lineWithBang}"`);
+      await queueExec(async () => {
+        const cmds = parseChatCommands(lineWithBang);
+        if (cmds.length <= 1) {
+          await execCommand(lineWithBang);
+        } else {
+          for (const c of cmds) {
+            await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim());
+          }
+        }
+      }, true);
+      log.ok(`Executed : "[CLI] ${lineWithBang}" Time: ${Date.now() - t0}ms`);
     } catch (err) {
       log.err(err.message);
     }
