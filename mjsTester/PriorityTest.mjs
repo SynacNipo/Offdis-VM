@@ -1,6 +1,14 @@
-import { connect, whenIdle, handle } from '../src/cli.mjs';
+import { connect, setActive, onChatMessage, whenIdle, execCommand } from '../src/cli.mjs';
+import { Bridge } from '../src/bridge.mjs';
+const b = new Bridge();
+await b.connect();
+const info = await b.call('info', { name: 'Windows-7-7601' });
+console.log('VM state before:', info.stateName);
+await b.close();
 await connect();
-await handle('startvm');
+onChatMessage({ author: { name: 'starter' }, role: 'normal', message: '!startvm' });
+await whenIdle();
+await execCommand('!startvm');
 await whenIdle();
 console.log('DONE');
 process.exit(0);

@@ -29,7 +29,10 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   clearLog         clear the console
   help | ?         this help - exit | quit`;
 
-const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 'revertvm', 'restartvm']);
+const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 'revertvm', 'restartvm', 'startvm']);
+
+// Commands that work even when every VM is powered off (don't need a running instance).
+const NO_VM_REQUIRED = new Set(['startvm']);
 
 // At the CLI prompt the `!` prefix is optional for these (chat still needs it).
 const BARE_COMMANDS = new Set(['key', 'type', 'send', 'combo', 'import', 'wait',
@@ -250,6 +253,18 @@ async function execCommand(text) {
       if (!Number.isNaN(ms)) await sleep(Math.min(Math.max(ms, 0), 10000));
       return { executed: true };
     }
+    case 'start': case 'startvm': {
+      let name = active;
+      if (!name) {
+        const vms = await bridge.call('listMachines');
+        const idled = vms.find((v) => v.name && (v.realName || '').toLowerCase() !== 'running');
+        name = (idled || vms.find((v) => v.name) || {}).name;
+        if (!name) throw new Error('no VMs found to start');
+      }
+      const res = await bridge.call('start', { name }, 240000);
+      active = res.name;
+      return { executed: true };
+    }
     case 'import': {
       await runImport(arg);
       return { executed: true };
@@ -392,9 +407,10 @@ function onChatMessage(msg) {
   // One whole message's command chain executes as a single serialized unit,
   // so concurrent chatters can never interleave keystrokes in the guest.
   queueExec(async () => {
-    if (!(await ensureActive())) {
+    const needsVM = cmds.some((c) => !NO_VM_REQUIRED.has(c.cmd.slice(1).toLowerCase()));
+    if (needsVM && !(await ensureActive())) {
       log.warn('no running VM - chat commands ignored');
-    return;
+      return;
     }
     for (const c of cmds) {
       const name = c.cmd.slice(1).toLowerCase();
@@ -512,7 +528,7 @@ async function handle(line) {
         return;
       }
     }
-    if (!active && CHAT_ALLOWED.has(name)) {
+    if (!active && CHAT_ALLOWED.has(name) && !NO_VM_REQUIRED.has(name)) {
       if (!(await ensureActive())) {
         log.warn('no running VM - pick one with list');
         return;
