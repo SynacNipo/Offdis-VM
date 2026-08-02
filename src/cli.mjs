@@ -29,16 +29,30 @@ const HELP = `Commands:
 
 const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 'revertvm', 'restartvm']);
 
-// !revertvm / !restartvm are vote-gated in chat: N distinct chatters must
-// request them within VOTE_WINDOW ms before they execute.
-const VOTE_COMMANDS = new Set(['revertvm', 'restartvm']);
+// !revertvm / !restartvm / !voteban are vote-gated in chat: N distinct
+// chatters must request them within VOTE_WINDOW ms before they execute.
+const VOTE_COMMANDS = new Set(['revertvm', 'restartvm', 'voteban']);
 const VOTE_ALIAS = { revert: 'revertvm', restart: 'restartvm' };
 const VOTE_THRESHOLD_KEY = {
   revertvm: 'revertVMVoteThreshold',
   restartvm: 'restartVMVoteThreshold',
+  voteban: 'votebanVoteThreshold',
 };
 const VOTE_WINDOW = 60000;
 const votes = new Map();
+
+// Shadowban state: lowercased author -> expiry timestamp (ms).
+const shadowbans = new Map();
+function banAuthor(name, seconds) {
+  shadowbans.set(name.toLowerCase(), Date.now() + seconds * 1000);
+}
+function isShadowbanned(name) {
+  const key = name.toLowerCase();
+  const exp = shadowbans.get(key);
+  if (!exp) return false;
+  if (exp < Date.now()) { shadowbans.delete(key); return false; }
+  return true;
+}
 
 // Shared cooldown for !restartvm / !revertvm (chat spam protection):
 // once either executes, the other is blocked for this long too.
@@ -203,6 +217,14 @@ async function execCommand(text) {
       await runImport(arg);
       return { executed: true };
     }
+    case 'voteban': {
+      const target = arg.trim().replace(/^@/, '');
+      if (!target) throw new Error('usage: !voteban <author>');
+      const dur = settings.voting?.votebanDurationSeconds ?? 300;
+      banAuthor(target, dur);
+      log.ok(`@${target} is shadowbanned for ${dur}s - will expire in ${dur}s`);
+      return { executed: true };
+    }
     case 'restart': case 'restartvm':
     case 'revert': case 'revertvm': {
       // one shared cooldown for both ops: a revert right after a restart is
@@ -317,9 +339,16 @@ async function ensureActive() {
 let liveAbort = null;
 
 function onChatMessage(msg) {
+  const author = msg.author.name.replace(/^@/, '');
+  // Shadowbanned chatters: message is hidden, nothing executes. They see
+  // nothing (shadow) - only the operator sees the expiry note.
+  if (isShadowbanned(author)) {
+    const left = Math.ceil((shadowbans.get(author.toLowerCase()) - Date.now()) / 1000);
+    log.warn(`@${author} is shadowbanned - will expire in ${left}s`);
+    return;
+  }
   const tag = msg.role === 'owner' ? log.tag('owner')
     : msg.role === 'moderator' ? log.tag('mod') : '';
-  const author = msg.author.name.replace(/^@/, '');
   log.chat({ tag: tag ? `${tag} ` : '', author, message: msg.message });
   const cmds = parseChatCommands(msg.message);
   if (!cmds.length) return;
@@ -352,6 +381,26 @@ function onChatMessage(msg) {
     const typedName = c.cmd.slice(1).toLowerCase();
     const name = VOTE_ALIAS[typedName] || typedName;
     if (!VOTE_COMMANDS.has(name)) continue;
+    if (name === 'voteban') {
+      const target = c.args.join(' ').trim().replace(/^@/, '');
+      if (!target) {
+        log.warn('usage: !voteban <author>');
+        continue;
+      }
+      const threshold = settings.voting?.votebanVoteThreshold ?? 2;
+      const vkey = `voteban:${target.toLowerCase()}`;
+      const n = voteFor(vkey, author, threshold);
+      if (n === null) continue;
+      log.info(n === 1
+        ? `@${author} started !voteban @${target}, vote ${n}/${threshold}`
+        : `@${author} voted !voteban @${target}, vote ${n}/${threshold}`);
+      if (n < threshold) continue;
+      votes.delete(vkey);
+      const dur = settings.voting?.votebanDurationSeconds ?? 300;
+      banAuthor(target, dur);
+      log.ok(`@${target} is shadowbanned for ${dur}s - will expire in ${dur}s`);
+      continue;
+    }
     const threshold = settings.voting?.[VOTE_THRESHOLD_KEY[name]] ?? 2;
     const n = voteFor(name, author, threshold);
     if (n === null) continue;

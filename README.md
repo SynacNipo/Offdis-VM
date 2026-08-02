@@ -34,7 +34,7 @@ list                 VM picker (arrows + Enter) - auto-starts if powered off
 help | ?             this help - exit | quit
 ```
 
-Chat can post `!key`, `!type`, `!send`, `!combo`, `!import`, `!wait`, `!restartvm`, `!revertvm` - chains of commands in one message run atomically. `!restartvm` / `!revertvm` are vote-gated (2 votes) and share a 15 s cooldown. Macros live in `macros/` (see `macros/readthis.txt`).
+Chat can post `!key`, `!type`, `!send`, `!combo`, `!import`, `!wait`, `!restartvm`, `!revertvm`, `!voteban <author>` - chains of commands in one message run atomically. `!restartvm` / `!revertvm` / `!voteban` are vote-gated (2 votes) and the VM ops share a 15 s cooldown. Macros live in `macros/` (see `macros/readthis.txt`).
 
 More details for everything above: **[[wiki]](https://github.com/SynacNipo/Offdis-VM/wiki)**
 

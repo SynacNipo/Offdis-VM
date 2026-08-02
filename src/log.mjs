@@ -22,6 +22,8 @@ const DEFAULT_SETTINGS = {
   voting: {
     revertVMVoteThreshold: 2,
     restartVMVoteThreshold: 2,
+    votebanVoteThreshold: 2,
+    votebanDurationSeconds: 300,
   },
 };
 
