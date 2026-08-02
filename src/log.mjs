@@ -19,6 +19,10 @@ const DEFAULT_SETTINGS = {
     mod: '[Mod]',
     owner: '[Owner]',
   },
+  voting: {
+    revertVMVoteThreshold: 2,
+    restartVMVoteThreshold: 2,
+  },
 };
 
 const ANSI = {

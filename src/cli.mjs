@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Bridge } from './bridge.mjs';
 import { resolveKey, chordParts, textToGroups, textToCodes, keyNames } from './scancodes.mjs';
-import { log, setWriter } from './log.mjs';
+import { log, setWriter, settings } from './log.mjs';
 import { Terminal } from './prompt.mjs';
 import { runLiveLoop } from './livechat.mjs';
 
@@ -21,11 +21,34 @@ const HELP = `Commands:
   !send <text>     type text and press Enter
   !combo <chord>   key combo with hold:  !combo win+r
   !import <name>   run a macro from imports/  (e.g. !import this)
+  !revertvm        revert to latest snapshot (chat: N votes to trigger)
+  !restartvm       restart the VM (chat: N votes to trigger)
   !live <videoId>  connect YouTube live chat - !live stop to disconnect
   !clearLog        clear the console
   help | ?         this help - exit | quit`;
 
-const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import']);
+const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'revertvm', 'restartvm']);
+
+// !revertvm / !restartvm are vote-gated in chat: N distinct chatters must
+// request them within VOTE_WINDOW ms before they execute.
+const VOTE_COMMANDS = new Set(['revertvm', 'restartvm']);
+const VOTE_THRESHOLD_KEY = {
+  revertvm: 'revertVMVoteThreshold',
+  restartvm: 'restartVMVoteThreshold',
+};
+const VOTE_WINDOW = 60000;
+const votes = new Map();
+function voteFor(name, author, threshold) {
+  const now = Date.now();
+  let v = votes.get(name);
+  if (!v || v.until < now) {
+    v = { by: new Set(), until: now + VOTE_WINDOW };
+    votes.set(name, v);
+  }
+  if (v.by.has(author)) return null;
+  v.by.add(author);
+  return v.by.size;
+}
 
 // Typing speed knobs. Per putScancodes call costs ~12ms; consecutive
 // shift-free chars are merged into small bursts to amortize that. TYPE_DELAY
@@ -173,6 +196,18 @@ async function execCommand(text) {
       await runImport(arg);
       return { executed: true };
     }
+    case 'restartvm': {
+      const res = await bridge.call('restart');
+      active = res.name;
+      log.ok(`restarted ${res.name} [${res.stateName}]`);
+      return { executed: true };
+    }
+    case 'revertvm': {
+      const res = await bridge.call('revert');
+      active = res.name;
+      log.ok(`reverted ${res.name} to snapshot [${res.stateName}]`);
+      return { executed: true };
+    }
     default:
       throw new Error(`unknown command '!${name}'`);
   }
@@ -287,6 +322,7 @@ function onChatMessage(msg) {
     for (const c of cmds) {
       const name = c.cmd.slice(1).toLowerCase();
       if (name === 'clearLog') continue;
+      if (VOTE_COMMANDS.has(name)) continue;
       if (!CHAT_ALLOWED.has(name)) continue;
       const cmdText = `${c.cmd} ${c.args.join(' ')}`.trim();
       const t0 = Date.now();
@@ -299,6 +335,32 @@ function onChatMessage(msg) {
       }
     }
   });
+  // Vote-gated commands: count votes immediately (not queued), execute only
+  // once enough distinct chatters have asked within the vote window.
+  for (const c of cmds) {
+    const name = c.cmd.slice(1).toLowerCase();
+    if (!VOTE_COMMANDS.has(name)) continue;
+    const threshold = settings.voting?.[VOTE_THRESHOLD_KEY[name]] ?? 2;
+    const n = voteFor(name, author, threshold);
+    if (n === null) continue;
+    log.info(`!${name} vote ${n}/${threshold} by @${author}`);
+    if (n < threshold) continue;
+    votes.delete(name);
+    log.ok(`!${name} triggered by ${n} votes`);
+    const t0 = Date.now();
+    queueExec(async () => {
+      if (!(await ensureActive())) {
+        log.warn(`no running VM - !${name} ignored`);
+        return;
+      }
+      try {
+        await execCommand(`!${name}`);
+        log.ok(`Executed : "!${name}" Time: ${Date.now() - t0}ms`);
+      } catch (err) {
+        log.err(`Failed : "!${name}": ${err.message}`);
+      }
+    });
+  }
 }
 
 async function cmdLive(arg) {

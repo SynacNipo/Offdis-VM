@@ -34,6 +34,8 @@ stop                 power off the active VM (ACPI)
 !send <text>         type text and press Enter
 !combo <chord>       key combo with hold:  !combo win+r
 !import <name>       run a macro from src/imports/ (e.g. !import this)
+!revertvm            revert to the latest snapshot
+!restartvm           restart the VM
 !live <videoId>      connect YouTube live chat - !live stop to disconnect
 !clearLog            clear the console
 help | ?             this help - exit | quit
@@ -44,6 +46,17 @@ If no VM is active when a command runs, the first running VM is auto-selected.
 ## YouTube live chat control
 
 Viewers in your live chat can drive the VM by posting commands - `!key`, `!type`, `!send`, `!combo` and `!import`. Commands are fully open by design: anyone in chat can type, so use VirtualBox snapshots as your safety net. Chat roles are shown as `[Mod]` / `[Owner]` tags.
+
+`!revertvm` and `!restartvm` are vote-gated in chat: a minimum number of distinct chatters must request the command (default **2**) before it triggers. Configure the thresholds in `src/settings.json`:
+
+```json
+"voting": {
+  "revertVMVoteThreshold": 2,
+  "restartVMVoteThreshold": 2
+}
+```
+
+`!revertvm` reverts the active VM to its latest snapshot; `!restartvm` powers it off and back on. Both stop the VM first, wait for it to fully power down, then relaunch it.
 
 Macros are simple text files in `src/imports/`:
 

@@ -225,6 +225,48 @@ function Invoke-Pause  { Assert-ActiveSession; $script:session.Console.Pause() |
 function Invoke-Resume { Assert-ActiveSession; $script:session.Console.Resume() | Out-Null; return $true }
 function Invoke-PowerOff { Assert-ActiveSession; $script:session.Console.PowerDown() | Out-Null; return $true }
 
+# Gracefully powers off the active VM and waits until it is fully stopped.
+function Stop-And-Wait($name) {
+    if ([string]::IsNullOrWhiteSpace($name)) { throw 'no active VM - use start <name> first' }
+    Close-Session
+    $machine = (Get-VBox).FindMachine($name)
+    $st = [int]$machine.State
+    if ($st -in @(5, 6, 8)) {
+        $s = New-Object -ComObject VirtualBox.Session
+        $machine.LockMachine($s, 1)
+        try {
+            $s.Console.PowerDown() | Out-Null
+            $s.UnlockMachine() | Out-Null
+        } catch {
+            try { $s.UnlockMachine() | Out-Null } catch { }
+        }
+    }
+    for ($i = 0; $i -lt 60; $i++) {
+        $real = Get-RealStateName $name
+        if ($real -in @('poweroff', 'saved', 'aborted')) { return }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "VM $name did not power off in time"
+}
+
+function Invoke-Restart {
+    $name = $script:sessionVM
+    Stop-And-Wait $name
+    return Start-Machine $name
+}
+
+function Invoke-Revert {
+    $name = $script:sessionVM
+    if ([string]::IsNullOrWhiteSpace($name)) { throw 'no active VM - use start <name> first' }
+    $machine = (Get-VBox).FindMachine($name)
+    if ($null -eq $machine.CurrentSnapshot) { throw 'VM has no snapshots to revert to' }
+    if (-not (Test-Path $script:vboxManage)) { throw 'VBoxManage not found - cannot revert' }
+    Stop-And-Wait $name
+    $out = & $script:vboxManage snapshot $name restorecurrent 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "VBoxManage snapshot restore failed: $($out -join ' ')" }
+    return Start-Machine $name
+}
+
 # ---- handshake ----
 try {
     $vbox = Get-VBox
@@ -272,6 +314,8 @@ while ($true) {
             'pause'        { $result = Invoke-Pause }
             'resume'       { $result = Invoke-Resume }
             'stop'         { $result = Invoke-PowerOff }
+            'restart'      { $result = Invoke-Restart }
+            'revert'       { $result = Invoke-Revert }
             'unlock'       { Close-Session; $result = $true }
             'active'       { $result = $script:sessionVM }
             default        { throw "unknown op: $op" }

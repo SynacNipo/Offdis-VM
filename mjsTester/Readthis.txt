@@ -1,0 +1,3 @@
+This folder contains features, 
+all testing tools usually for my development but I guess you could run them 
+if you know how to.
