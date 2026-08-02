@@ -121,6 +121,22 @@ async function sendCodes(codes) {
   await queued(() => bridge.call('key', { codes }));
 }
 
+// Modifier chords (win+r, ctrl+alt+del, ...) must be sent key-by-key with a
+// gap: if the Win make and R make land in the same PS/2 tick, a slow guest
+// misses the modifier and the 'r' gets typed as plain text (win+r -> rcmd).
+const CHORD_GAP_MS = 60;
+async function sendChord(makes, breaks) {
+  for (let i = 0; i < makes.length; i++) {
+    await sendCodes([makes[i]]);
+    if (i < makes.length - 1) await sleep(CHORD_GAP_MS);
+  }
+  await sleep(120); // hold the chord briefly before releasing
+  for (let i = 0; i < breaks.length; i++) {
+    await sendCodes([breaks[i]]);
+    if (i < breaks.length - 1) await sleep(CHORD_GAP_MS);
+  }
+}
+
 // Serializes WHOLE command executions (typing streams, combos, macros) so two
 // chat commands can never interleave their keystrokes into the guest.
 // queueExec(priority=true) inserts at the FRONT of the queue: the next unit
@@ -215,7 +231,8 @@ async function execCommand(text) {
   const arg = match[2].trim();
   switch (name) {
     case 'key': {
-      await sendCodes(resolveKey(arg));
+      const { makes, breaks } = chordParts(arg);
+      await sendChord(makes, breaks);
       return { executed: true };
     }
     case 'type': {
@@ -240,12 +257,7 @@ async function execCommand(text) {
     }
     case 'combo': {
       const { makes, breaks } = chordParts(arg);
-      try {
-        await sendCodes(makes);
-        await sleep(120);
-      } finally {
-        await sendCodes(breaks);
-      }
+      await sendChord(makes, breaks);
       return { executed: true };
     }
     case 'wait': {
