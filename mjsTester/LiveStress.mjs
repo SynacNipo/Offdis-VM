@@ -4,7 +4,7 @@
 // Usage: node LiveStress.mjs <videoId> [seconds] [vmName]
 import { connect, setActive, onChatMessage } from '../src/cli.mjs';
 import { runLiveLoop } from '../src/livechat.mjs';
-import { setWriter } from '../src/log.mjs';
+import { setWriter, saveLogLines } from '../src/log.mjs';
 
 const videoId = process.argv[2];
 const seconds = parseInt(process.argv[3] || '120', 10);
@@ -47,4 +47,6 @@ for (const f of failed) console.log('  FAILED:', f);
 if (typeCount) {
   console.log(`type/send commands: ${typeCount}, avg ${(totalChars / (totalMs / 1000)).toFixed(1)} chars/s across ${totalMs}ms of typing`);
 }
+const logFile = saveLogLines(lines, 'stress');
+if (logFile) console.log('full log saved:', logFile);
 process.exit(0);

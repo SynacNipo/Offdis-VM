@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Bridge } from './bridge.mjs';
 import { resolveKey, chordParts, textToGroups, textToCodes, keyNames } from './scancodes.mjs';
-import { log, setWriter, settings } from './log.mjs';
+import { log, setWriter, settings, saveLogLines } from './log.mjs';
 import { Terminal } from './prompt.mjs';
 import { runLiveLoop } from './livechat.mjs';
 
@@ -86,18 +86,13 @@ setWriter((t) => term.write(t));
 
 // Session log capture: every emitted line is buffered and dumped to logs/
 // on exit (Ctrl+C, quit) and on !live stop.
-const LOG_DIR = path.join(__dirname, 'logs');
 const sessionLines = [];
 setWriter((t) => sessionLines.push(t));
 
 function saveSessionLog() {
   try {
-    if (!sessionLines.length) return;
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const file = path.join(LOG_DIR, `session-${stamp}.log`);
-    fs.writeFileSync(file, sessionLines.join('\n') + '\n', 'utf8');
-    term.write(`\nsession log saved: ${file}\n`);
+    const file = saveLogLines(sessionLines, 'session');
+    if (file) term.write(`\nsession log saved: ${file}\n`);
   } catch (err) {
     term.write(`\nfailed to save session log: ${err.message}\n`);
   }

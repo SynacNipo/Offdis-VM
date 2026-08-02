@@ -159,3 +159,16 @@ export const log = {
 };
 
 export { settings };
+
+// Dump a buffered line list to logs/<prefix>-<timestamp>.log (shared by the
+// CLI session log and the mjsTester tools). Strips ANSI codes.
+export function saveLogLines(lines, prefix) {
+  if (!lines.length) return null;
+  const dir = path.join(__dirname, 'logs');
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const file = path.join(dir, `${prefix}-${stamp}.log`);
+  const clean = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ''));
+  fs.writeFileSync(file, clean.join('\n') + '\n', 'utf8');
+  return file;
+}
