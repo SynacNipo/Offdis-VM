@@ -9,7 +9,7 @@ import { Terminal } from './prompt.mjs';
 import { runLiveLoop } from './livechat.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const IMPORTS_DIR = path.join(__dirname, 'imports');
+const IMPORTS_DIR = path.join(__dirname, '..', 'macros');
 
 const HELP = `Commands:
   list             VM picker (arrows + Enter) - auto-starts if powered off

@@ -1,0 +1,34 @@
+MAKE YOUR OWN MACROS
+====================
+
+A macro is a plain text file in this folder. It lets chat run a long
+sequence of commands with ONE message: !import <name>
+
+EXAMPLE - macros/minecraft.txt:
+
+    # comments start with #
+    !combo win+r
+    !type minecraft
+    !key enter
+    !wait 8000
+    !key enter
+
+Any chatter can now type:   !import minecraft
+
+HOW IT WORKS
+------------
+- Every line is one command: !key, !type, !send, !combo, !import, !wait
+- !wait <ms> pauses the sequence (max 10000). Chat can't use !wait
+  directly - only macros can. Great for boot/loading times.
+- The whole macro runs as ONE uninterrupted unit: other chatters'
+  commands wait in line and can't cut in mid-sequence.
+- Macros can call other macros (!import other), up to 3 levels deep.
+- File names: no spaces. Doom -> doom.txt, minecraft -> minecraft.txt.
+
+TIPS
+----
+- Save the macro, then test it yourself at the CLI prompt first:
+  npm start -> !import minecraft
+- If a step fails the macro aborts - keep !wait timings generous.
+- Boot sequences work great after a !restartvm / !revertvm:
+  make a "boot" macro and call !import boot after voting a restart.
