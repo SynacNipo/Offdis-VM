@@ -1,10 +1,6 @@
-import { connect, setActive, execCommand, handle } from '../src/cli.mjs';
-import { settings } from '../src/log.mjs';
-console.log('typing.maxLength =', settings.typing?.maxLength ?? 0);
+import { connect, whenIdle, handle } from '../src/cli.mjs';
 await connect();
-await setActive('Windows-7-7601');
-await execCommand('!send ' + 'a'.repeat(150));
-console.log('OK: 150 chars accepted (cap off)');
-await handle('live stop');
-await handle('live');
+await handle('startvm');
+await whenIdle();
+console.log('DONE');
 process.exit(0);

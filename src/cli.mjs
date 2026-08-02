@@ -21,6 +21,7 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   send <text>      type text and press Enter
   combo <chord>    key combo with hold:  combo win+r
   import <name>    run a macro from macros/  (e.g. import this)
+  startvm          start / activate a VM (also: start <name>, alias: start)
   revertvm         revert to latest snapshot (chat: N votes to trigger, alias: revert)
   restartvm        restart the VM (chat: N votes to trigger, alias: restart)
   voteban <author> shadowban a chatter (chat: N votes to trigger)
@@ -32,7 +33,8 @@ const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 
 
 // At the CLI prompt the `!` prefix is optional for these (chat still needs it).
 const BARE_COMMANDS = new Set(['key', 'type', 'send', 'combo', 'import', 'wait',
-  'restart', 'restartvm', 'revert', 'revertvm', 'voteban', 'live', 'clearLog']);
+  'restart', 'restartvm', 'revert', 'revertvm', 'voteban', 'live', 'clearLog',
+  'start', 'startvm']);
 
 // !revertvm / !restartvm / !voteban are vote-gated in chat: N distinct
 // chatters must request them within VOTE_WINDOW ms before they execute.
@@ -542,6 +544,10 @@ async function handle(line) {
   if (BARE_COMMANDS.has(bare)) {
     if (bare === 'live') return cmdLive(cmdArgs.join(' '));
     if (bare === 'clearLog') return term.clear();
+    if (bare === 'start' || bare === 'startvm') {
+      if (!cmdArgs[0] && !active) { log.warn('no active VM - use list or start <name>'); return; }
+      return setActive(cmdArgs[0] || active);
+    }
     if (bare === 'key') {
       const arg = cmdArgs.join(' ');
       if (!arg) {
