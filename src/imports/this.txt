@@ -1,0 +1,4 @@
+# sample macro: type a line and press Enter
+!type hello from offdisvm
+!wait 300
+!send test complete

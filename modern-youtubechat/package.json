@@ -1,0 +1,23 @@
+{
+  "name": "@mrp/youtube-live-chat",
+  "version": "1.0.0",
+  "description": "CLI tool to stream YouTube live chat messages",
+  "type": "module",
+  "bin": {
+    "ylc": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["youtube", "live-chat", "cli"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "offdisvm",
+  "version": "0.1.0",
+  "description": "Zero-dependency interactive console for VirtualBox via the Main API (PowerShell COM bridge)",
+  "type": "module",
+  "bin": {
+    "offdisvm": "src/cli.mjs"
+  },
+  "scripts": {
+    "start": "node src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
