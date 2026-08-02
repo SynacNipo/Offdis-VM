@@ -21,8 +21,8 @@ const HELP = `Commands:
   !send <text>     type text and press Enter
   !combo <chord>   key combo with hold:  !combo win+r
   !import <name>   run a macro from imports/  (e.g. !import this)
-  !revertvm        revert to latest snapshot (chat: N votes to trigger)
-  !restartvm       restart the VM (chat: N votes to trigger)
+  !revertvm        revert to latest snapshot (chat: N votes to trigger, alias: !revert)
+  !restartvm       restart the VM (chat: N votes to trigger, alias: !restart)
   !live <videoId>  connect YouTube live chat - !live stop to disconnect
   !clearLog        clear the console
   help | ?         this help - exit | quit`;
@@ -32,6 +32,7 @@ const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'revertv
 // !revertvm / !restartvm are vote-gated in chat: N distinct chatters must
 // request them within VOTE_WINDOW ms before they execute.
 const VOTE_COMMANDS = new Set(['revertvm', 'restartvm']);
+const VOTE_ALIAS = { revert: 'revertvm', restart: 'restartvm' };
 const VOTE_THRESHOLD_KEY = {
   revertvm: 'revertVMVoteThreshold',
   restartvm: 'restartVMVoteThreshold',
@@ -196,13 +197,13 @@ async function execCommand(text) {
       await runImport(arg);
       return { executed: true };
     }
-    case 'restartvm': {
+    case 'restart': case 'restartvm': {
       const res = await bridge.call('restart', {}, 240000);
       active = res.name;
       log.ok(`restarted ${res.name} [${res.stateName}]`);
       return { executed: true };
     }
-    case 'revertvm': {
+    case 'revert': case 'revertvm': {
       const res = await bridge.call('revert', {}, 240000);
       active = res.name;
       log.ok(`reverted ${res.name} to snapshot [${res.stateName}]`);
@@ -338,26 +339,29 @@ function onChatMessage(msg) {
   // Vote-gated commands: count votes immediately (not queued), execute only
   // once enough distinct chatters have asked within the vote window.
   for (const c of cmds) {
-    const name = c.cmd.slice(1).toLowerCase();
+    const typedName = c.cmd.slice(1).toLowerCase();
+    const name = VOTE_ALIAS[typedName] || typedName;
     if (!VOTE_COMMANDS.has(name)) continue;
     const threshold = settings.voting?.[VOTE_THRESHOLD_KEY[name]] ?? 2;
     const n = voteFor(name, author, threshold);
     if (n === null) continue;
-    log.info(`!${name} vote ${n}/${threshold} by @${author}`);
+    log.info(n === 1
+      ? `@${author} started !${typedName}, vote ${n}/${threshold}`
+      : `@${author} voted !${typedName}, vote ${n}/${threshold}`);
     if (n < threshold) continue;
     votes.delete(name);
-    log.ok(`!${name} triggered by ${n} votes`);
+    log.ok(`!${typedName} triggered by ${n} votes`);
     const t0 = Date.now();
     queueExec(async () => {
       if (!(await ensureActive())) {
-        log.warn(`no running VM - !${name} ignored`);
+        log.warn(`no running VM - !${typedName} ignored`);
         return;
       }
       try {
         await execCommand(`!${name}`);
-        log.ok(`Executed : "!${name}" Time: ${Date.now() - t0}ms`);
+        log.ok(`Executed : "!${typedName}" Time: ${Date.now() - t0}ms`);
       } catch (err) {
-        log.err(`Failed : "!${name}": ${err.message}`);
+        log.err(`Failed : "!${typedName}": ${err.message}`);
       }
     });
   }

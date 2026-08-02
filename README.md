@@ -47,7 +47,7 @@ If no VM is active when a command runs, the first running VM is auto-selected.
 
 Viewers in your live chat can drive the VM by posting commands - `!key`, `!type`, `!send`, `!combo` and `!import`. Commands are fully open by design: anyone in chat can type, so use VirtualBox snapshots as your safety net. Chat roles are shown as `[Mod]` / `[Owner]` tags.
 
-`!revertvm` and `!restartvm` are vote-gated in chat: a minimum number of distinct chatters must request the command (default **2**) before it triggers. Configure the thresholds in `src/settings.json`:
+`!revertvm` and `!restartvm` are vote-gated in chat: a minimum number of distinct chatters must request the command (default **2**) before it triggers. `!revert` and `!restart` work as shorthand aliases. Configure the thresholds in `src/settings.json`:
 
 ```json
 "voting": {
