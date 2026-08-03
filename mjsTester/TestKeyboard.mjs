@@ -18,6 +18,7 @@ async function main() {
   console.log(`Active: ${res.name} [${res.stateName}]`);
 
   let sent = 0;
+  const t0 = Date.now();
   async function send(label, codes) {
     await bridge.call('key', { codes });
     sent++;
@@ -35,7 +36,8 @@ async function main() {
     await send(ch, resolveKey(ch));
   }
 
-  console.log(`\nDone: ${sent} key sequences sent to ${vm}`);
+  const ms = Date.now() - t0;
+  console.log(`\nDone: ${sent} key sequences sent to ${vm} in ${ms}ms => ${(sent / (ms / 1000)).toFixed(1)} chars/s`);
   await bridge.close();
 }
 
