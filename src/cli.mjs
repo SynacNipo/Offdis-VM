@@ -18,7 +18,7 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   stop             power off the active VM (ACPI)
   key <key>        send a key:  key enter - key ctrl+alt+del - key ? = all keys
   type <text>      type text into the VM (no Enter)
-  send <text>      type text and press Enter
+  send <text>      type text and press Enter (alias: sendm)
   combo <chord>    key combo with hold:  combo win+r
   wait <dur>       pause:  500ms, 2s, 3 (ms) - max 10s
   import <name>    run a macro from macros/  (e.g. import this)
@@ -30,13 +30,13 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   clearLog         clear the console
   help | ?         this help - exit | quit`;
 
-const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'combo', 'import', 'wait', 'revertvm', 'restartvm', 'startvm']);
+const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait', 'revertvm', 'restartvm', 'startvm']);
 
 // Commands that work even when every VM is powered off (don't need a running instance).
 const NO_VM_REQUIRED = new Set(['startvm']);
 
 // At the CLI prompt the `!` prefix is optional for these (chat still needs it).
-const BARE_COMMANDS = new Set(['key', 'type', 'send', 'combo', 'import', 'wait',
+const BARE_COMMANDS = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait',
   'restart', 'restartvm', 'revert', 'revertvm', 'voteban', 'live', 'clearLog',
   'start', 'startvm']);
 
@@ -274,7 +274,7 @@ async function execCommand(text) {
       await bridge.call('type', { groups: bursts, delay: TYPE_DELAY });
       return { executed: true };
     }
-    case 'send': {
+    case 'send': case 'sendm': {
       const cap = settings.typing?.maxLength ?? 0;
       if (cap > 0 && arg.length > cap) {
         throw new Error(`!send text is too long (${arg.length} chars, max ${cap})`);
