@@ -276,45 +276,27 @@ function Invoke-Type($groups, $delayMs) {
 }
 
 # ---- mouse ----
-# VirtualBox absolute mouse coordinate space is 0..65535 for both axes; the
-# visible guest area sits centered around (0x8000, 0x8000). We track the
-# cursor globally so clicks land wherever the last move left it.
-$script:mouseX = 0x8000
-$script:mouseY = 0x8000
-$script:mouseInitialized = $false
-
-function Initialize-MousePosition {
-    if ($script:mouseInitialized) { return }
-    $mouse = $script:session.Console.Mouse
-    # try to preserve the host cursor position if the API exposes it
-    try {
-        $mx = $mouse.AbsoluteX
-        $my = $mouse.AbsoluteY
-        if ($null -ne $mx -and $null -ne $my) {
-            $script:mouseX = [int64]$mx
-            $script:mouseY = [int64]$my
-        }
-    } catch { }
-    $script:mouseInitialized = $true
-}
+# putMouseEvent(dx,dy,dz,dw,buttonState) is RELATIVE movement in pixels, so a
+# drift is a stream of small deltas (not absolute 0..0xffff coords). Clicks
+# use dx/dy of 0 to leave the cursor where it is and only toggle the button.
 
 # Drifts the cursor in a direction for a set duration (small step per tick).
 function Invoke-MouseMove($dir, [double]$seconds) {
     Assert-ActiveSession
-    Initialize-MousePosition
     $mouse = $script:session.Console.Mouse
     $tickMs = 20
-    $step = 24
+    $step = 12
     $limit = [Math]::Max([int64]1, $seconds * 1000)
     $ticks = [Math]::Max([int64]1, [int64]($limit / $tickMs))
     for ($i = 0; $i -lt $ticks; $i++) {
+        $dx = 0; $dy = 0
         switch ($dir) {
-            'up'    { $script:mouseY = [Math]::Max($script:mouseY - $step, 0) }
-            'down'  { $script:mouseY = [Math]::Min($script:mouseY + $step, 0xFFFF) }
-            'left'  { $script:mouseX = [Math]::Max($script:mouseX - $step, 0) }
-            'right' { $script:mouseX = [Math]::Min($script:mouseX + $step, 0xFFFF) }
+            'up'    { $dy = -$step }
+            'down'  { $dy =  $step }
+            'left'  { $dx = -$step }
+            'right' { $dx =  $step }
         }
-        $mouse.putMouseEvent($script:mouseX, $script:mouseY, 0, 0, 0) | Out-Null
+        $mouse.putMouseEvent($dx, $dy, 0, 0, 0) | Out-Null
         Start-Sleep -Milliseconds $tickMs
     }
     return $true
@@ -323,12 +305,11 @@ function Invoke-MouseMove($dir, [double]$seconds) {
 # Sends a click (left=1 / right=2 button bit) at the current cursor position.
 function Invoke-MouseClick($button) {
     Assert-ActiveSession
-    Initialize-MousePosition
     $mouse = $script:session.Console.Mouse
     $btn = if ($button -eq 'right') { 2 } else { 1 }
-    $mouse.putMouseEvent($script:mouseX, $script:mouseY, 0, 0, $btn) | Out-Null
+    $mouse.putMouseEvent(0, 0, 0, 0, $btn) | Out-Null
     Start-Sleep -Milliseconds 80
-    $mouse.putMouseEvent($script:mouseX, $script:mouseY, 0, 0, 0) | Out-Null
+    $mouse.putMouseEvent(0, 0, 0, 0, 0) | Out-Null
     return $true
 }
 
