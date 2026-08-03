@@ -110,10 +110,6 @@ export function textToGroups(text) {
   return groups;
 }
 
-export function textToCodes(text) {
-  return textToGroups(text).flat();
-}
-
 export function keyNames() {
   return Object.keys(KEY).sort();
 }

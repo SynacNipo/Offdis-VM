@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Bridge } from './bridge.mjs';
-import { resolveKey, chordParts, textToGroups, textToCodes, keyNames } from './scancodes.mjs';
+import { chordParts, textToGroups, keyNames } from './scancodes.mjs';
 import { log, setWriter, settings, saveLogLines } from './log.mjs';
 import { Terminal } from './prompt.mjs';
 import { runLiveLoop } from './livechat.mjs';
@@ -726,4 +726,4 @@ async function main() {
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) main();
 
-export { execCommand, setActive, onChatMessage, parseChatCommands, handle, whenIdle };
+export { execCommand, setActive, onChatMessage, parseChatCommands, whenIdle };

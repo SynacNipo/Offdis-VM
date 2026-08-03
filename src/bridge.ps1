@@ -380,8 +380,6 @@ while ($true) {
             'stop'         { $result = Invoke-PowerOff }
             'restart'      { $result = Invoke-Restart }
             'revert'       { $result = Invoke-Revert }
-            'unlock'       { Close-Session; $result = $true }
-            'active'       { $result = $script:sessionVM }
             default        { throw "unknown op: $op" }
         }
         Send-Json ([PSCustomObject]@{ id = $id; ok = $true; result = $result })

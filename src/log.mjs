@@ -159,7 +159,6 @@ export const log = {
     if (!useColor || !tag) return tag || '';
     return `${ANSI[color] || ''}${tag}${ANSI.reset}`;
   },
-  color: paint,
 };
 
 export { settings };

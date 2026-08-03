@@ -23,6 +23,7 @@ export class Terminal {
   }
 
   close() {
+    this.closed = true;
     if (process.stdin.isRaw) process.stdin.setRawMode(false);
     process.stdin.pause();
     process.stdin.removeAllListeners('data');
