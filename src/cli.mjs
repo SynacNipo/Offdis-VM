@@ -457,8 +457,9 @@ const MAX_RESULT_LINE = 150;
 function buildResult(message, author, badges, ok, total, ms, skipped) {
   const allOk = ok === badges.length;
   const line = (r) => `@${author} : ${message} → ${r}`;
+  const actions = (n) => `${n} action${n === 1 ? '' : 's'}`;
   const full = allOk
-    ? `${badges.join(' ')} - All ${badges.length} in ${ms}ms`
+    ? `${badges.join(' ')} - ${actions(badges.length)} in ${ms}ms`
     : `${badges.join(' ')} - ${ok}/${total} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`;
   if (line(full).length <= MAX_RESULT_LINE) return { text: full, ok: allOk };
   if (allOk) return { text: `✓ ${ok}/${total} in ${ms}ms`, ok: true };
