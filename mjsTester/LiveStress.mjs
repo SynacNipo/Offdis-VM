@@ -29,23 +29,26 @@ aborted = true;
 await loop.catch(() => { });
 
 const chatMsgs = lines.filter((l) => /^\d{2}:\d{2}:\d{2} @/.test(l));
-const executed = lines.filter((l) => l.includes('Executed :'));
-const failed = lines.filter((l) => l.includes('Failed :'));
+const summaries = lines.filter((l) => l.includes('executed by @'));
 const votes = lines.filter((l) => l.includes(' vote '));
-let totalChars = 0, totalMs = 0, typeCount = 0;
-for (const l of executed) {
-  const m = l.match(/Time: (\d+)ms/);
-  const cmd = l.match(/Executed : "(!type|!send) ([\s\S]*?)" by/);
-  if (m && cmd) { totalMs += +m[1]; totalChars += cmd[2].length; typeCount++; }
+let totalChars = 0, typeCount = 0;
+for (const l of summaries) {
+  for (const m of l.matchAll(/[✓✗] (!type|!send) ([^\]]*)\]/g)) {
+    typeCount++;
+    totalChars += m[2].length;
+  }
 }
+const okBadges = summaries.reduce((n, l) => n + (l.match(/\[✓/g) || []).length, 0);
+const badBadges = summaries.reduce((n, l) => n + (l.match(/\[✗/g) || []).length, 0);
 console.log('---- stats ----');
 console.log('chat messages seen:', chatMsgs.length);
 console.log('vote lines:', votes.length);
-console.log('commands executed:', executed.length);
-console.log('commands failed:', failed.length);
-for (const f of failed) console.log('  FAILED:', f);
+console.log('commands executed:', okBadges);
+console.log('commands failed:', badBadges);
+console.log('summary lines:', summaries.length);
+for (const f of summaries.filter((l) => /✗/.test(l))) console.log('  FAILED:', f);
 if (typeCount) {
-  console.log(`type/send commands: ${typeCount}, avg ${(totalChars / (totalMs / 1000)).toFixed(1)} chars/s across ${totalMs}ms of typing`);
+  console.log(`type/send commands: ${typeCount}, ${totalChars} chars total`);
 }
 const logFile = saveLogLines(lines, 'stress');
 if (logFile) console.log('full log saved:', logFile);

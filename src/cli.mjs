@@ -464,28 +464,48 @@ function onChatMessage(msg) {
     log.warn(`@${author} rate-limited - action ignored`);
     return;
   }
-  // One whole message's command chain executes as a single serialized unit,
+// One whole message's command chain executes as a single serialized unit,
   // so concurrent chatters can never interleave keystrokes in the guest.
   queueExec(async () => {
-    const needsVM = cmds.some((c) => !NO_VM_REQUIRED.has(c.cmd.slice(1).toLowerCase()));
-    if (needsVM && !(await ensureActive())) {
-      log.warn('no running VM - chat commands ignored');
-      return;
-    }
+    const targets = [];
+    let needsVM = false;
     for (const c of cmds) {
       const name = c.cmd.slice(1).toLowerCase();
       if (name === 'clearLog') continue;
       if (VOTE_COMMANDS.has(name)) continue;
       if (!CHAT_ALLOWED.has(name)) continue;
-      const cmdText = `${c.cmd} ${c.args.join(' ')}`.trim();
-      const t0 = Date.now();
-      log.info(`Executing : "${cmdText}"`);
+      if (!NO_VM_REQUIRED.has(name)) needsVM = true;
+      targets.push(`${c.cmd} ${c.args.join(' ')}`.trim());
+    }
+    if (!targets.length) return;
+    if (needsVM && !(await ensureActive())) {
+      log.warn(`no running VM - ${targets.length} chat command(s) ignored`);
+      return;
+    }
+    // Compact summary line per message: [✓ cmd] [✗ cmd] ... - one line even
+    // for a whole chain, instead of N Executing/Executed/Failed triplets.
+    const t0 = Date.now();
+    const badges = [];
+    let ok = 0;
+    for (const cmdText of targets) {
       try {
         await execCommand(cmdText);
-        log.ok(`Executed : "${cmdText}" by @${author}, Time: ${Date.now() - t0}ms`);
+        ok++;
+        badges.push(`[✓ ${cmdText}]`);
       } catch (err) {
-        log.err(`Failed : "${cmdText}" by @${author}: ${err.message}`);
+        const isVmOff = /Powered off|start it first/i.test(err.message);
+        badges.push(`[✗ ${cmdText}: ${err.message}]`);
+        // VM being powered off fails every remaining command identically -
+        // stop the chain and skip them.
+        if (isVmOff) break;
       }
+    }
+    const ms = Date.now() - t0;
+    if (ok === badges.length) {
+      log.ok(`${badges.join(' ')} - All ${badges.length} executed by @${author} in ${ms}ms`);
+    } else {
+      const skipped = targets.length - badges.length;
+      log.err(`${badges.join(' ')} - ${ok}/${targets.length} executed by @${author} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`);
     }
   });
   // Vote-gated commands: count votes immediately (not queued), execute only
