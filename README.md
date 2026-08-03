@@ -4,6 +4,9 @@ Zero-dependency Node.js console that controls VirtualBox VMs through the Virtual
 
 📖 **Full documentation: [wiki](https://github.com/SynacNipo/Offdis-VM/wiki)** (commands, macros, voting, snapshots, configuration)
 
+> [!NOTE]
+> This project was developed with the assistance of AI. All scripts are fine-tuned and contain no malicious intent of any kind.
+
 ## Requirements
 
 - [VirtualBox](https://www.virtualbox.org/) 7.x installed (default `C:\Program Files\Oracle\VirtualBox`)
