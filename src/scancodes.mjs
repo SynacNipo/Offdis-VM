@@ -85,28 +85,78 @@ const PLAIN_CHARS = {
   '/': 'slash', ' ': 'space', '\t': 'tab', '\n': 'enter', '\r': 'enter',
 };
 
+// Accented characters are typed as US-International dead-key sequences
+// (' + a = á, Shift+' + u = ü, Shift+` + n = ñ, ; + e = ê ...). The guest
+// must be set to the "United States-International" layout - a superset of
+// plain US, so every existing US character works unchanged.
+const DEAD = {
+  acute: { key: 'quote' },          // ' -> á é í ó ú
+  grave: { key: 'backtick' },       // ` -> à è ì ò ù
+  circumflex: { key: 'semicolon' }, // ; -> â ê î ô û
+  tilde: { key: 'backtick', shift: true }, // ~ -> ñ ã õ
+  dieresis: { key: 'quote', shift: true }, // " -> ä ë ï ö ü
+};
+
+const COMPOSE = {
+  á: { dead: 'acute', base: 'a' }, é: { dead: 'acute', base: 'e' },
+  í: { dead: 'acute', base: 'i' }, ó: { dead: 'acute', base: 'o' },
+  ú: { dead: 'acute', base: 'u' },
+  Á: { dead: 'acute', base: 'A' }, É: { dead: 'acute', base: 'E' },
+  Í: { dead: 'acute', base: 'I' }, Ó: { dead: 'acute', base: 'O' },
+  Ú: { dead: 'acute', base: 'U' },
+  à: { dead: 'grave', base: 'a' }, è: { dead: 'grave', base: 'e' },
+  ì: { dead: 'grave', base: 'i' }, ò: { dead: 'grave', base: 'o' },
+  ù: { dead: 'grave', base: 'u' },
+  â: { dead: 'circumflex', base: 'a' }, ê: { dead: 'circumflex', base: 'e' },
+  î: { dead: 'circumflex', base: 'i' }, ô: { dead: 'circumflex', base: 'o' },
+  û: { dead: 'circumflex', base: 'u' },
+  ä: { dead: 'dieresis', base: 'a' }, ë: { dead: 'dieresis', base: 'e' },
+  ï: { dead: 'dieresis', base: 'i' }, ö: { dead: 'dieresis', base: 'o' },
+  ü: { dead: 'dieresis', base: 'u' },
+  Ä: { dead: 'dieresis', base: 'A' }, Ë: { dead: 'dieresis', base: 'E' },
+  Ï: { dead: 'dieresis', base: 'I' }, Ö: { dead: 'dieresis', base: 'O' },
+  Ü: { dead: 'dieresis', base: 'U' },
+  ñ: { dead: 'tilde', base: 'n' }, Ñ: { dead: 'tilde', base: 'N' },
+  ã: { dead: 'tilde', base: 'a' }, õ: { dead: 'tilde', base: 'o' },
+};
+
 export function textToGroups(text) {
   const groups = [];
   let shiftHeld = false;
+  const flushShift = () => {
+    if (shiftHeld) { groups.push([...KEY.shift.brk]); shiftHeld = false; }
+  };
+  const units = [];
   for (const ch of String(text)) {
+    const comp = COMPOSE[ch];
+    if (!comp) { units.push({ ch }); continue; }
+    const d = DEAD[comp.dead];
+    const pre = [];
+    if (d.shift) pre.push(...KEY.shift.make);
+    pre.push(...KEY[d.key].make, ...KEY[d.key].brk);
+    if (d.shift) pre.push(...KEY.shift.brk);
+    units.push({ pre, ch: comp.base });
+  }
+  for (const u of units) {
     let keyName = null;
     let needsShift = false;
-    if (/[a-z]/.test(ch)) keyName = ch;
-    else if (/[A-Z]/.test(ch)) { keyName = ch.toLowerCase(); needsShift = true; }
-    else if (/[0-9]/.test(ch)) keyName = ch;
-    else if (SHIFT_CHARS[ch] !== undefined) { keyName = SHIFT_CHARS[ch]; needsShift = true; }
-    else if (PLAIN_CHARS[ch] !== undefined) keyName = PLAIN_CHARS[ch];
+    if (/[a-z]/.test(u.ch)) keyName = u.ch;
+    else if (/[A-Z]/.test(u.ch)) { keyName = u.ch.toLowerCase(); needsShift = true; }
+    else if (/[0-9]/.test(u.ch)) keyName = u.ch;
+    else if (SHIFT_CHARS[u.ch] !== undefined) { keyName = SHIFT_CHARS[u.ch]; needsShift = true; }
+    else if (PLAIN_CHARS[u.ch] !== undefined) keyName = PLAIN_CHARS[u.ch];
     if (!keyName) {
-      throw new Error(`cannot type character '${ch}' (0x${ch.codePointAt(0).toString(16)})`);
+      throw new Error(`cannot type character '${u.ch}' (0x${u.ch.codePointAt(0).toString(16)})`);
     }
     const k = KEY[keyName];
     const codes = [];
     if (needsShift && !shiftHeld) { codes.push(...KEY.shift.make); shiftHeld = true; }
     if (!needsShift && shiftHeld) { codes.push(...KEY.shift.brk); shiftHeld = false; }
     codes.push(...k.make, ...k.brk);
+    if (u.pre) groups.push(u.pre);
     groups.push(codes);
   }
-  if (shiftHeld && groups.length) groups[groups.length - 1].push(...KEY.shift.brk);
+  flushShift();
   return groups;
 }
 
