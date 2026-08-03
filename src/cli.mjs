@@ -443,6 +443,7 @@ async function ensureActive() {
 
 // ---- live chat ----
 let liveAbort = null;
+let runSeq = 0; // per-message run counter so results tie to the right chatter
 
 function onChatMessage(msg) {
   const author = msg.author.name.replace(/^@/, '');
@@ -453,10 +454,18 @@ function onChatMessage(msg) {
     log.warn(`@${author} is shadowbanned - will expire in ${left}s`);
     return;
   }
+  const cmds = parseChatCommands(msg.message);
+  // Messages carrying a runnable command get a #id so their result line can
+  // always be matched back to the exact chat message (busy chats interleave).
+  const runId = cmds.some((c) => {
+    const raw = c.cmd.slice(1).toLowerCase();
+    const n = VOTE_ALIAS[raw] || raw;
+    return CHAT_ALLOWED.has(n) || VOTE_COMMANDS.has(n);
+  }) ? ++runSeq : null;
+  const runTag = runId ? `#${runId} ` : '';
   const tag = msg.role === 'owner' ? log.tag('owner')
     : msg.role === 'moderator' ? log.tag('mod') : '';
-  log.chat({ tag: tag ? `${tag} ` : '', author, message: msg.message });
-  const cmds = parseChatCommands(msg.message);
+  log.chat({ tag: `${runTag}${tag ? `${tag} ` : ''}`, author, message: msg.message });
   if (!cmds.length) return;
   // Rate limit: >= RATE_MAX command messages from one chatter within
   // RATE_WINDOW ms are ignored (action spam - the 4th hit is the trigger).
@@ -502,10 +511,10 @@ function onChatMessage(msg) {
     }
     const ms = Date.now() - t0;
     if (ok === badges.length) {
-      log.ok(`  └─ ${badges.join(' ')} - All ${badges.length} executed by @${author} in ${ms}ms`);
+      log.ok(`#${runId} └─ ${badges.join(' ')} - All ${badges.length} executed by @${author} in ${ms}ms`);
     } else {
       const skipped = targets.length - badges.length;
-      log.err(`  └─ ${badges.join(' ')} - ${ok}/${targets.length} executed by @${author} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`);
+      log.err(`#${runId} └─ ${badges.join(' ')} - ${ok}/${targets.length} executed by @${author} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`);
     }
   });
   // Vote-gated commands: count votes immediately (not queued), execute only
@@ -525,8 +534,8 @@ function onChatMessage(msg) {
       const n = voteFor(vkey, author, threshold);
       if (n === null) continue;
       log.info(n === 1
-        ? `[VOTE-BAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
-        : `[VOTE-BAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
+        ? `#${runId} [VOTE-BAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
+        : `#${runId} [VOTE-BAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
       if (n < threshold) continue;
       votes.delete(vkey);
       const dur = settings.voting?.votebanDurationSeconds ?? 300;
@@ -539,11 +548,11 @@ function onChatMessage(msg) {
     if (n === null) continue;
     const vtag = `[VOTE-${name.toUpperCase()}]`;
     log.info(n === 1
-      ? `${vtag} @${author} started !${typedName}, vote ${n}/${threshold}`
-      : `${vtag} @${author} voted !${typedName}, vote ${n}/${threshold}`);
+      ? `#${runId} ${vtag} @${author} started !${typedName}, vote ${n}/${threshold}`
+      : `#${runId} ${vtag} @${author} voted !${typedName}, vote ${n}/${threshold}`);
     if (n < threshold) continue;
     votes.delete(name);
-    log.ok(`${vtag} !${typedName} triggered by ${n} votes`);
+    log.ok(`#${runId} ${vtag} !${typedName} triggered by ${n} votes`);
     const t0 = Date.now();
     // Priority lane: a vote-passed VM op must not wait behind a backlog of
     // typing spam (that's the 12-minute lag from the logs) - it jumps the
@@ -555,9 +564,9 @@ function onChatMessage(msg) {
       }
       try {
         await execCommand(`!${name}`);
-        log.ok(`Executed : "!${typedName}" Time: ${Date.now() - t0}ms`);
+        log.ok(`#${runId} └─ ✓ !${typedName} - triggered by ${n} votes, in ${Date.now() - t0}ms`);
       } catch (err) {
-        log.err(`Failed : "!${typedName}": ${err.message}`);
+        log.err(`#${runId} └─ ✗ !${typedName}: ${err.message}`);
       }
     }, true);
   }
