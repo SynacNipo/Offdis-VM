@@ -9,8 +9,9 @@ export { initLiveChat, pollChat };
 const MAX_RETRIES = 12;
 const BACKOFF_BASE_MS = 1500;
 
-export async function runLiveLoop(videoId, onMessage, isAborted) {
+export async function runLiveLoop(videoId, onMessage, isAborted, onConnected) {
   let config = await initLiveChat(videoId);
+  if (onConnected) onConnected(config.title, config.host);
   let primed = false;
   let fails = 0;
   while (true) {

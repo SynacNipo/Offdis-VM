@@ -137,16 +137,22 @@ export const log = {
   chat(msg) {
     // 'auto' mode: color each chatter's name with a stable hue from the
     // 24-bit palette; set colors.chat to a color name for a single color.
+    // Optional msg.result ({ text, ok }) is appended as " → <result>" and
+    // colored green/red so a merged message+result line reads as one unit.
     if (settings.colors.chat === 'auto' && msg && typeof msg === 'object' && msg.author) {
       const prefix = msg.tag || '';
       const colored = useColor
         ? `${authorColor(msg.author)}@${msg.author}${ANSI.reset}`
         : `@${msg.author}`;
-      emit(`${stamp()} ${prefix}${colored} : ${msg.message}`);
+      let result = msg.result ? msg.result.text : '';
+      if (result && useColor) {
+        result = paint(msg.result.ok ? 'ok' : 'err', result);
+      }
+      emit(`${stamp()} ${prefix}${colored} : ${msg.message}${result ? ` → ${result}` : ''}`);
       return;
     }
     const text = msg && typeof msg === 'object'
-      ? `${msg.tag || ''}@${msg.author} : ${msg.message}`
+      ? `${msg.tag || ''}@${msg.author} : ${msg.message}${msg.result ? ` → ${msg.result.text}` : ''}`
       : String(msg);
     emit(`${stamp()} ${paint('chat', text)}`);
   },

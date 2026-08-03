@@ -166,10 +166,10 @@ const execTasks = [];
 let execRunning = false;
 const idleWaiters = [];
 
-function queueExec(fn, priority = false) {
+function queueExec(fn, priority = false, onCancel) {
   return new Promise((resolve, reject) => {
     const run = () => Promise.resolve().then(fn).then(resolve, reject);
-    run.cancel = () => resolve();
+    run.cancel = () => { if (onCancel) onCancel(); resolve(); };
     if (priority) execTasks.unshift(run);
     else execTasks.push(run);
     pump();
@@ -254,7 +254,7 @@ function burstGroups(groups, max) {
   return bursts;
 }
 
-async function execCommand(text) {
+async function execCommand(text, opts = {}) {
   const match = text.trim().match(/^!([a-zA-Z]+)\s?([\s\S]*)$/);
   if (!match) return { executed: false, hidden: true };
   const name = match[1].toLowerCase();
@@ -330,10 +330,13 @@ async function execCommand(text) {
     case 'restart': case 'restartvm':
     case 'revert': case 'revertvm': {
       // one shared cooldown for both ops: a revert right after a restart is
-      // just as disruptive as back-to-back reverts.
-      const since = Date.now() - lastVmOpAt;
-      if (since < VM_OP_COOLDOWN_MS) {
-        throw new Error(`!${name} is on cooldown - retry in ${Math.ceil((VM_OP_COOLDOWN_MS - since) / 1000)}s`);
+      // just as disruptive as back-to-back reverts. Chat spam protection
+      // only - the CLI operator can always bypass it.
+      if (!opts.bypassCooldown) {
+        const since = Date.now() - lastVmOpAt;
+        if (since < VM_OP_COOLDOWN_MS) {
+          throw new Error(`!${name} is on cooldown - retry in ${Math.ceil((VM_OP_COOLDOWN_MS - since) / 1000)}s`);
+        }
       }
       const res = await bridge.call(name.startsWith('restart') ? 'restart' : 'revert', {}, 240000);
       lastVmOpAt = Date.now();
@@ -443,7 +446,30 @@ async function ensureActive() {
 
 // ---- live chat ----
 let liveAbort = null;
-let runSeq = 0; // per-message run counter so results tie to the right chatter
+
+// Merged message+result line: chat line and outcome in one, so a busy chat
+// can never leave a result floating under the wrong message. Full per-command
+// badges when the line stays readable, count+failures when it would get too
+// long (long !type chains).
+const MAX_RESULT_LINE = 150;
+function buildResult(message, author, badges, ok, total, ms, skipped) {
+  const allOk = ok === badges.length;
+  const line = (r) => `@${author} : ${message} → ${r}`;
+  const full = allOk
+    ? `${badges.join(' ')} - All ${badges.length} in ${ms}ms`
+    : `${badges.join(' ')} - ${ok}/${total} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`;
+  if (line(full).length <= MAX_RESULT_LINE) return { text: full, ok: allOk };
+  if (allOk) return { text: `✓ ${ok}/${total} in ${ms}ms`, ok: true };
+  let fails = badges.filter((b) => b.startsWith('[✗'))
+    .map((b) => b.slice(3, -1))
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .join('; ');
+  if (fails.length > 90) fails = fails.slice(0, 90) + '…';
+  return {
+    text: `✗ ${ok}/${total}${skipped ? ` (${skipped} skipped)` : ''} in ${ms}ms${fails ? ` - ${fails}` : ''}`,
+    ok: false,
+  };
+}
 
 function onChatMessage(msg) {
   const author = msg.author.name.replace(/^@/, '');
@@ -455,68 +481,62 @@ function onChatMessage(msg) {
     return;
   }
   const cmds = parseChatCommands(msg.message);
-  // Messages carrying a runnable command get a #id so their result line can
-  // always be matched back to the exact chat message (busy chats interleave).
-  const runId = cmds.some((c) => {
-    const raw = c.cmd.slice(1).toLowerCase();
-    const n = VOTE_ALIAS[raw] || raw;
-    return CHAT_ALLOWED.has(n) || VOTE_COMMANDS.has(n);
-  }) ? ++runSeq : null;
-  const runTag = runId ? `#${runId} ` : '';
-  const tag = msg.role === 'owner' ? log.tag('owner')
-    : msg.role === 'moderator' ? log.tag('mod') : '';
-  log.chat({ tag: `${runTag}${tag ? `${tag} ` : ''}`, author, message: msg.message });
-  if (!cmds.length) return;
-  // Rate limit: >= RATE_MAX command messages from one chatter within
-  // RATE_WINDOW ms are ignored (action spam - the 4th hit is the trigger).
-  if (isRateLimited(author)) {
-    log.warn(`@${author} rate-limited - action ignored`);
+  const targets = [];
+  for (const c of cmds) {
+    const name = c.cmd.slice(1).toLowerCase();
+    if (name === 'clearLog') continue;
+    if (VOTE_COMMANDS.has(name)) continue;
+    if (!CHAT_ALLOWED.has(name)) continue;
+    targets.push(`${c.cmd} ${c.args.join(' ')}`.trim());
+  }
+  const needsVM = targets.some((t) => !NO_VM_REQUIRED.has(t.slice(1).split(/\s+/)[0].toLowerCase()));
+  // Command messages are rendered once when their chain finishes - message
+  // and result glued together on one line.
+  const render = (result) => {
+    const tag = msg.role === 'owner' ? log.tag('owner')
+      : msg.role === 'moderator' ? log.tag('mod') : '';
+    log.chat({ tag: tag ? `${tag} ` : '', author, message: msg.message, result });
+  };
+  if (!cmds.length) {
+    render(null);
     return;
   }
-// One whole message's command chain executes as a single serialized unit,
-  // so concurrent chatters can never interleave keystrokes in the guest.
-  queueExec(async () => {
-    const targets = [];
-    let needsVM = false;
-    for (const c of cmds) {
-      const name = c.cmd.slice(1).toLowerCase();
-      if (name === 'clearLog') continue;
-      if (VOTE_COMMANDS.has(name)) continue;
-      if (!CHAT_ALLOWED.has(name)) continue;
-      if (!NO_VM_REQUIRED.has(name)) needsVM = true;
-      targets.push(`${c.cmd} ${c.args.join(' ')}`.trim());
-    }
-    if (!targets.length) return;
-    if (needsVM && !(await ensureActive())) {
-      log.warn(`no running VM - ${targets.length} chat command(s) ignored`);
-      return;
-    }
-    // Compact summary line per message: [✓ cmd] [✗ cmd] ... - one line even
-    // for a whole chain, instead of N Executing/Executed/Failed triplets.
-    const t0 = Date.now();
-    const badges = [];
-    let ok = 0;
-    for (const cmdText of targets) {
-      try {
-        await execCommand(cmdText);
-        ok++;
-        badges.push(`[✓ ${cmdText}]`);
-      } catch (err) {
-        const isVmOff = /Powered off|start it first/i.test(err.message);
-        badges.push(`[✗ ${cmdText}: ${err.message}]`);
-        // VM being powered off fails every remaining command identically -
-        // stop the chain and skip them.
-        if (isVmOff) break;
+  if (isRateLimited(author)) {
+    render({ text: '✗ rate-limited - action ignored', ok: false });
+    return;
+  }
+  if (!targets.length) {
+    // Vote-only / unknown commands: plain render, the vote loop below handles them.
+    render(null);
+  } else {
+    // One whole message's command chain executes as a single serialized unit,
+    // so concurrent chatters can never interleave keystrokes in the guest.
+    queueExec(async () => {
+      if (needsVM && !(await ensureActive())) {
+        render({ text: `✗ no running VM - ${targets.length} command(s) ignored`, ok: false });
+        return;
       }
-    }
-    const ms = Date.now() - t0;
-    if (ok === badges.length) {
-      log.ok(`#${runId} └─ ${badges.join(' ')} - All ${badges.length} executed by @${author} in ${ms}ms`);
-    } else {
+      const t0 = Date.now();
+      const badges = [];
+      let ok = 0;
+      for (const cmdText of targets) {
+        try {
+          await execCommand(cmdText);
+          ok++;
+          badges.push(`[✓ ${cmdText}]`);
+        } catch (err) {
+          const isVmOff = /Powered off|start it first/i.test(err.message);
+          badges.push(`[✗ ${cmdText}: ${err.message}]`);
+          // VM being powered off fails every remaining command identically -
+          // stop the chain and skip them.
+          if (isVmOff) break;
+        }
+      }
+      const ms = Date.now() - t0;
       const skipped = targets.length - badges.length;
-      log.err(`#${runId} └─ ${badges.join(' ')} - ${ok}/${targets.length} executed by @${author} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`);
-    }
-  });
+      render(buildResult(msg.message, author, badges, ok, targets.length, ms, skipped));
+    }, false, () => render({ text: '✗ cancelled - queue cleared', ok: false }));
+  }
   // Vote-gated commands: count votes immediately (not queued), execute only
   // once enough distinct chatters have asked within the vote window.
   for (const c of cmds) {
@@ -534,8 +554,8 @@ function onChatMessage(msg) {
       const n = voteFor(vkey, author, threshold);
       if (n === null) continue;
       log.info(n === 1
-        ? `#${runId} [VOTE-BAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
-        : `#${runId} [VOTE-BAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
+        ? `[VOTE-BAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
+        : `[VOTE-BAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
       if (n < threshold) continue;
       votes.delete(vkey);
       const dur = settings.voting?.votebanDurationSeconds ?? 300;
@@ -548,11 +568,11 @@ function onChatMessage(msg) {
     if (n === null) continue;
     const vtag = `[VOTE-${name.toUpperCase()}]`;
     log.info(n === 1
-      ? `#${runId} ${vtag} @${author} started !${typedName}, vote ${n}/${threshold}`
-      : `#${runId} ${vtag} @${author} voted !${typedName}, vote ${n}/${threshold}`);
+      ? `${vtag} @${author} started !${typedName}, vote ${n}/${threshold}`
+      : `${vtag} @${author} voted !${typedName}, vote ${n}/${threshold}`);
     if (n < threshold) continue;
     votes.delete(name);
-    log.ok(`#${runId} ${vtag} !${typedName} triggered by ${n} votes`);
+    log.ok(`${vtag} !${typedName} triggered by ${n} votes`);
     const t0 = Date.now();
     // Priority lane: a vote-passed VM op must not wait behind a backlog of
     // typing spam (that's the 12-minute lag from the logs) - it jumps the
@@ -564,9 +584,9 @@ function onChatMessage(msg) {
       }
       try {
         await execCommand(`!${name}`);
-        log.ok(`#${runId} └─ ✓ !${typedName} - triggered by ${n} votes, in ${Date.now() - t0}ms`);
+        log.ok(`Executed : "!${typedName}" Time: ${Date.now() - t0}ms`);
       } catch (err) {
-        log.err(`#${runId} └─ ✗ !${typedName}: ${err.message}`);
+        log.err(`Failed : "!${typedName}": ${err.message}`);
       }
     }, true);
   }
@@ -590,7 +610,12 @@ async function cmdLive(arg) {
   let aborted = false;
   liveAbort = () => { aborted = true; };
   log.info(`connecting to live stream ${arg} ...`);
-  runLiveLoop(arg, onChatMessage, () => aborted)
+  runLiveLoop(arg, onChatMessage, () => aborted, (title, host) => {
+    const stream = title || host;
+    log.ok(stream
+      ? `[Live Chat Connected] (Host : [${stream}])`
+      : '[Live Chat Connected]');
+  })
     .then(() => {
       liveAbort = null;
       log.info('live chat disconnected');
@@ -634,10 +659,10 @@ async function handle(line) {
       await queueExec(async () => {
         const cmds = parseChatCommands(line);
         if (cmds.length <= 1) {
-          await execCommand(line);
+          await execCommand(line, { bypassCooldown: true });
         } else {
           for (const c of cmds) {
-            await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim());
+            await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim(), { bypassCooldown: true });
           }
         }
       }, true);
@@ -682,10 +707,10 @@ async function handle(line) {
       await queueExec(async () => {
         const cmds = parseChatCommands(lineWithBang);
         if (cmds.length <= 1) {
-          await execCommand(lineWithBang);
+          await execCommand(lineWithBang, { bypassCooldown: true });
         } else {
           for (const c of cmds) {
-            await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim());
+            await execCommand(`${c.cmd} ${c.args.join(' ')}`.trim(), { bypassCooldown: true });
           }
         }
       }, true);
@@ -732,7 +757,7 @@ async function main() {
   if (process.stdin.isTTY) {
     term.start();
     while (true) {
-      const line = await term.prompt(`vbox${active ? ` [${active}]` : ''}> `);
+      const line = await term.prompt(`${active ? `[${active}] ` : ''}> `);
       if (line === null) break;
       await handle(line.trim());
     }

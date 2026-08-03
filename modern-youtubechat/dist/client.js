@@ -344,6 +344,40 @@ function parsePollResponse(data) {
     const nextContinuation = getContinuationFromArray(liveChatCont?.['continuations']);
     return { messages, continuation: nextContinuation };
 }
+function extractMetaTitle(html) {
+    const m = /<meta name="title" content="([^"]*)">/i.exec(html);
+    if (!m)
+        return null;
+    return m[1]
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&nbsp;/g, ' ');
+}
+function extractOwnerName(initialData) {
+    try {
+        const seen = new Set();
+        const walk = (o) => {
+            if (!o || typeof o !== 'object' || seen.has(o))
+                return null;
+            seen.add(o);
+            const owner = o.videoOwnerRenderer;
+            if (owner?.title?.runs?.[0]?.text)
+                return owner.title.runs[0].text;
+            for (const k of Object.keys(o)) {
+                const found = walk(o[k]);
+                if (found)
+                    return found;
+            }
+            return null;
+        };
+        return walk(initialData);
+    }
+    catch { /* ignore */ }
+    return null;
+}
 export async function initLiveChat(videoId) {
     const url = `${YT_BASE}/watch?v=${encodeURIComponent(videoId)}`;
     const resp = await fetch(url, {
@@ -376,7 +410,7 @@ export async function initLiveChat(videoId) {
     if (!continuation) {
         throw new Error('No live chat continuation found. The stream may not be live or chat may be disabled.');
     }
-    return { apiKey, context, continuation, videoId };
+    return { apiKey, context, continuation, videoId, title: extractMetaTitle(html), host: extractOwnerName(initialData) };
 }
 export async function pollChat(config) {
     const url = `${YT_API}/live_chat/get_live_chat?key=${encodeURIComponent(config.apiKey)}&prettyPrint=false`;

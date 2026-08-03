@@ -4,6 +4,8 @@ interface LiveChatConfig {
     context: Record<string, unknown>;
     continuation: string;
     videoId: string;
+    title?: string | null;
+    host?: string | null;
 }
 export declare function initLiveChat(videoId: string): Promise<LiveChatConfig>;
 export declare function pollChat(config: LiveChatConfig): Promise<{

@@ -29,7 +29,7 @@ aborted = true;
 await loop.catch(() => { });
 
 const chatMsgs = lines.filter((l) => /^\d{2}:\d{2}:\d{2} @/.test(l));
-const summaries = lines.filter((l) => l.includes('executed by @'));
+const summaries = lines.filter((l) => l.includes(' → '));
 const votes = lines.filter((l) => l.includes(' vote '));
 let totalChars = 0, typeCount = 0;
 for (const l of summaries) {
@@ -39,13 +39,13 @@ for (const l of summaries) {
   }
 }
 const okBadges = summaries.reduce((n, l) => n + (l.match(/\[✓/g) || []).length, 0);
-const badBadges = summaries.reduce((n, l) => n + (l.match(/\[✗/g) || []).length, 0);
+const badBadges = summaries.reduce((n, l) => n + (l.match(/\[✗/g) || []).length + (/→ ✗/.test(l) && !l.includes('[✗') ? 1 : 0), 0);
 console.log('---- stats ----');
 console.log('chat messages seen:', chatMsgs.length);
 console.log('vote lines:', votes.length);
 console.log('commands executed:', okBadges);
 console.log('commands failed:', badBadges);
-console.log('summary lines:', summaries.length);
+console.log('merged message+result lines:', summaries.length);
 for (const f of summaries.filter((l) => /✗/.test(l))) console.log('  FAILED:', f);
 if (typeCount) {
   console.log(`type/send commands: ${typeCount}, ${totalChars} chars total`);
