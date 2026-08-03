@@ -502,10 +502,10 @@ function onChatMessage(msg) {
     }
     const ms = Date.now() - t0;
     if (ok === badges.length) {
-      log.ok(`${badges.join(' ')} - All ${badges.length} executed by @${author} in ${ms}ms`);
+      log.ok(`  └─ ${badges.join(' ')} - All ${badges.length} executed by @${author} in ${ms}ms`);
     } else {
       const skipped = targets.length - badges.length;
-      log.err(`${badges.join(' ')} - ${ok}/${targets.length} executed by @${author} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`);
+      log.err(`  └─ ${badges.join(' ')} - ${ok}/${targets.length} executed by @${author} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`);
     }
   });
   // Vote-gated commands: count votes immediately (not queued), execute only
