@@ -68,10 +68,12 @@ function isShadowbanned(name) {
 // Chat action rate limit: a chatter firing commands faster than RATE_MAX
 // messages within RATE_WINDOW gets those actions ignored (spam protection,
 // e.g. one user looping !combo win+r ... chains to hold the queue hostage).
+// Moderators and the owner bypass the limit.
 const RATE_WINDOW_MS = 2000;
 const RATE_MAX = 4;
 const rateHits = new Map(); // lowercased author -> [timestamps]
-function isRateLimited(author) {
+function isRateLimited(author, role) {
+  if (role === 'moderator' || role === 'owner') return false;
   const key = author.toLowerCase();
   const now = Date.now();
   let hits = rateHits.get(key);
@@ -501,7 +503,7 @@ function onChatMessage(msg) {
     render(null);
     return;
   }
-  if (isRateLimited(author)) {
+  if (isRateLimited(author, msg.role)) {
     render({ text: '✗ rate-limited - action ignored', ok: false });
     return;
   }
