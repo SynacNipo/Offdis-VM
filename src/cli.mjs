@@ -505,8 +505,8 @@ function onChatMessage(msg) {
       const n = voteFor(vkey, author, threshold);
       if (n === null) continue;
       log.info(n === 1
-        ? `[VOTE-VOTEBAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
-        : `[VOTE-VOTEBAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
+        ? `[VOTE-BAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
+        : `[VOTE-BAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
       if (n < threshold) continue;
       votes.delete(vkey);
       const dur = settings.voting?.votebanDurationSeconds ?? 300;
