@@ -505,8 +505,8 @@ function onChatMessage(msg) {
       const n = voteFor(vkey, author, threshold);
       if (n === null) continue;
       log.info(n === 1
-        ? `@${author} started !voteban @${target}, vote ${n}/${threshold}`
-        : `@${author} voted !voteban @${target}, vote ${n}/${threshold}`);
+        ? `[VOTE-VOTEBAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
+        : `[VOTE-VOTEBAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
       if (n < threshold) continue;
       votes.delete(vkey);
       const dur = settings.voting?.votebanDurationSeconds ?? 300;
@@ -517,12 +517,13 @@ function onChatMessage(msg) {
     const threshold = settings.voting?.[VOTE_THRESHOLD_KEY[name]] ?? 2;
     const n = voteFor(name, author, threshold);
     if (n === null) continue;
+    const vtag = `[VOTE-${name.toUpperCase()}]`;
     log.info(n === 1
-      ? `@${author} started !${typedName}, vote ${n}/${threshold}`
-      : `@${author} voted !${typedName}, vote ${n}/${threshold}`);
+      ? `${vtag} @${author} started !${typedName}, vote ${n}/${threshold}`
+      : `${vtag} @${author} voted !${typedName}, vote ${n}/${threshold}`);
     if (n < threshold) continue;
     votes.delete(name);
-    log.ok(`!${typedName} triggered by ${n} votes`);
+    log.ok(`${vtag} !${typedName} triggered by ${n} votes`);
     const t0 = Date.now();
     // Priority lane: a vote-passed VM op must not wait behind a backlog of
     // typing spam (that's the 12-minute lag from the logs) - it jumps the
