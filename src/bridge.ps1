@@ -275,6 +275,63 @@ function Invoke-Type($groups, $delayMs) {
     return $true
 }
 
+# ---- mouse ----
+# VirtualBox absolute mouse coordinate space is 0..65535 for both axes; the
+# visible guest area sits centered around (0x8000, 0x8000). We track the
+# cursor globally so clicks land wherever the last move left it.
+$script:mouseX = 0x8000
+$script:mouseY = 0x8000
+$script:mouseInitialized = $false
+
+function Initialize-MousePosition {
+    if ($script:mouseInitialized) { return }
+    $mouse = $script:session.Console.Mouse
+    # try to preserve the host cursor position if the API exposes it
+    try {
+        $mx = $mouse.AbsoluteX
+        $my = $mouse.AbsoluteY
+        if ($null -ne $mx -and $null -ne $my) {
+            $script:mouseX = [int64]$mx
+            $script:mouseY = [int64]$my
+        }
+    } catch { }
+    $script:mouseInitialized = $true
+}
+
+# Drifts the cursor in a direction for a set duration (small step per tick).
+function Invoke-MouseMove($dir, [double]$seconds) {
+    Assert-ActiveSession
+    Initialize-MousePosition
+    $mouse = $script:session.Console.Mouse
+    $tickMs = 20
+    $step = 24
+    $limit = [Math]::Max([int64]1, $seconds * 1000)
+    $ticks = [Math]::Max([int64]1, [int64]($limit / $tickMs))
+    for ($i = 0; $i -lt $ticks; $i++) {
+        switch ($dir) {
+            'up'    { $script:mouseY = [Math]::Max($script:mouseY - $step, 0) }
+            'down'  { $script:mouseY = [Math]::Min($script:mouseY + $step, 0xFFFF) }
+            'left'  { $script:mouseX = [Math]::Max($script:mouseX - $step, 0) }
+            'right' { $script:mouseX = [Math]::Min($script:mouseX + $step, 0xFFFF) }
+        }
+        $mouse.putMouseEvent($script:mouseX, $script:mouseY, 0, 0, 0) | Out-Null
+        Start-Sleep -Milliseconds $tickMs
+    }
+    return $true
+}
+
+# Sends a click (left=1 / right=2 button bit) at the current cursor position.
+function Invoke-MouseClick($button) {
+    Assert-ActiveSession
+    Initialize-MousePosition
+    $mouse = $script:session.Console.Mouse
+    $btn = if ($button -eq 'right') { 2 } else { 1 }
+    $mouse.putMouseEvent($script:mouseX, $script:mouseY, 0, 0, $btn) | Out-Null
+    Start-Sleep -Milliseconds 80
+    $mouse.putMouseEvent($script:mouseX, $script:mouseY, 0, 0, 0) | Out-Null
+    return $true
+}
+
 function Invoke-Pause  { Assert-ActiveSession; $script:session.Console.Pause() | Out-Null; return $true }
 function Invoke-Resume { Assert-ActiveSession; $script:session.Console.Resume() | Out-Null; return $true }
 function Invoke-PowerOff { Assert-ActiveSession; $script:session.Console.PowerDown() | Out-Null; return $true }
@@ -375,6 +432,8 @@ while ($true) {
             'info'         { $result = Get-Info ([string]$req.args.name) }
             'key'          { $result = Invoke-Key ($req.args.codes) }
             'type'         { $result = Invoke-Type ($req.args.groups) ($req.args.delay) }
+            'mousemove'    { $result = Invoke-MouseMove ([string]$req.args.dir) ([double]$req.args.seconds) }
+            'mouseclick'   { $result = Invoke-MouseClick ([string]$req.args.button) }
             'pause'        { $result = Invoke-Pause }
             'resume'       { $result = Invoke-Resume }
             'stop'         { $result = Invoke-PowerOff }

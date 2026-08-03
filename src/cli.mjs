@@ -21,6 +21,8 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   send <text>      type text and press Enter (alias: sendm)
   combo <chord>    key combo with hold:  combo win+r
   wait <dur>       pause:  500ms, 2s, 3 (ms) - max 10s
+  mouse <dir>      drift cursor:  mouse up 4s - mouse left 2s (max 10s)
+  lclick|rclick    click left/right mouse button at current cursor
   import <name>    run a macro from macros/  (e.g. import this)
   startvm          start / activate a VM (also: start <name>, alias: start)
   revertvm         revert to latest snapshot (chat: N votes to trigger, alias: revert)
@@ -30,7 +32,7 @@ const HELP = `Commands: (! optional at this prompt - chat requires it)
   clearLog         clear the console
   help | ?         this help - exit | quit`;
 
-const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait', 'revertvm', 'restartvm', 'startvm']);
+const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait', 'revertvm', 'restartvm', 'startvm', 'mouse', 'lclick', 'rclick']);
 
 // Commands that work even when every VM is powered off (don't need a running instance).
 const NO_VM_REQUIRED = new Set(['startvm']);
@@ -38,7 +40,7 @@ const NO_VM_REQUIRED = new Set(['startvm']);
 // At the CLI prompt the `!` prefix is optional for these (chat still needs it).
 const BARE_COMMANDS = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait',
   'restart', 'restartvm', 'revert', 'revertvm', 'voteban', 'live', 'clearLog',
-  'start', 'startvm']);
+  'start', 'startvm', 'mouse', 'lclick', 'rclick']);
 
 // !revertvm / !restartvm / !voteban are vote-gated in chat: N distinct
 // chatters must request them within VOTE_WINDOW ms before they execute.
@@ -327,6 +329,20 @@ async function execCommand(text, opts = {}) {
       const dur = settings.voting?.votebanDurationSeconds ?? 300;
       banAuthor(target, dur);
       log.ok(`@${target} is shadowbanned for ${dur}s - will expire in ${dur}s`);
+      return { executed: true };
+    }
+    case 'mouse': {
+      const m = /^(up|down|left|right)\s+(?:(\d+(?:\.\d+)?)\s*(s|sec|seconds|ms|millis)?)?$/i.exec(arg);
+      if (!m) throw new Error('usage: !mouse <up|down|left|right> [duration]');
+      const dir = m[1].toLowerCase();
+      let ms = m[2] ? parseFloat(m[2]) * (m[3] && /^s/i.test(m[3]) ? 1000 : 1) : 1000;
+      const maxMs = settings.mouse?.maxMs ?? 10000;
+      ms = Math.min(Math.max(ms, 250), maxMs);
+      await bridge.call('mousemove', { dir, seconds: ms / 1000 });
+      return { executed: true };
+    }
+    case 'lclick': case 'rclick': {
+      await bridge.call('mouseclick', { button: name === 'rclick' ? 'right' : 'left' });
       return { executed: true };
     }
     case 'restart': case 'restartvm':
