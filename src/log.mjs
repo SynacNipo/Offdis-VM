@@ -29,6 +29,20 @@ const DEFAULT_SETTINGS = {
     // Max chars for !type / !send text. 0 = no limit (default).
     maxLength: 0,
   },
+  livechat: {
+    // ms between polls while chat messages are arriving
+    fastMs: 700,
+    // ms of silence before polling backs off
+    idleMs: 10000,
+    // max ms between polls while chat is idle
+    maxMs: 6000,
+    // random jitter fraction added to each poll delay
+    jitter: 0.25,
+    // transient (429/5xx) retries before giving up
+    maxRetries: 12,
+    // linear backoff multiplier (ms) for transient failures
+    backoffBaseMs: 1500,
+  },
 };
 
 const ANSI = {
