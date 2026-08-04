@@ -29,6 +29,10 @@ const DEFAULT_SETTINGS = {
     // Max chars for !type / !send text. 0 = no limit (default).
     maxLength: 0,
   },
+  mouse: {
+    // Max ms for !mouse drift before it is clamped.
+    maxMs: 10000,
+  },
   livechat: {
     // ms between polls while chat messages are arriving
     fastMs: 700,

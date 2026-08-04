@@ -3,56 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Bridge } from './bridge.mjs';
-import { chordParts, textToGroups, keyNames } from './scancodes.mjs';
+import { chordParts, textToGroups, keyNames, burstGroups } from './scancodes.mjs';
 import { log, setWriter, settings, saveLogLines } from './log.mjs';
 import { Terminal } from './prompt.mjs';
 import { runLiveLoop } from './livechat.mjs';
+import {
+  COMMANDS, CHAT_ALLOWED, BARE_COMMANDS, NO_VM_REQUIRED, VOTE_COMMANDS,
+  ALIASES, parseChatCommands, buildResult, voteFor, dropVote, buildHelp,
+} from './commands.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IMPORTS_DIR = path.join(__dirname, '..', 'macros');
 
-const HELP = `Commands: (! optional at this prompt - chat requires it)
-  list             VM picker (arrows + Enter) - auto-starts if powered off
-  info [<name>]    show VM details
-  pause | resume   pause / resume the active VM
-  stop             power off the active VM (ACPI)
-  key <key>        send a key:  key enter - key ctrl+alt+del - key ? = all keys
-  type <text>      type text into the VM (no Enter)
-  send <text>      type text and press Enter (alias: sendm)
-  combo <chord>    key combo with hold:  combo win+r
-  wait <dur>       pause:  500ms, 2s, 3 (ms) - max 10s
-  mouse <dir>      drift cursor:  mouse up 4s - mouse left 2s (max 10s)
-  lclick|rclick    click left/right mouse button at current cursor
-  import <name>    run a macro from macros/  (e.g. import this)
-  startvm          start / activate a VM (also: start <name>, alias: start)
-  revertvm         revert to latest snapshot (chat: N votes to trigger, alias: revert)
-  restartvm        restart the VM (chat: N votes to trigger, alias: restart)
-  voteban <author> shadowban a chatter (chat: N votes to trigger)
-  live <videoId>   connect YouTube live chat - live stop to disconnect
-  clearLog         clear the console
-  help | ?         this help - exit | quit`;
-
-const CHAT_ALLOWED = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait', 'revertvm', 'restartvm', 'startvm', 'mouse', 'lclick', 'rclick']);
-
-// Commands that work even when every VM is powered off (don't need a running instance).
-const NO_VM_REQUIRED = new Set(['startvm']);
-
-// At the CLI prompt the `!` prefix is optional for these (chat still needs it).
-const BARE_COMMANDS = new Set(['key', 'type', 'send', 'sendm', 'combo', 'import', 'wait',
-  'restart', 'restartvm', 'revert', 'revertvm', 'voteban', 'live', 'clearLog',
-  'start', 'startvm', 'mouse', 'lclick', 'rclick']);
-
-// !revertvm / !restartvm / !voteban are vote-gated in chat: N distinct
-// chatters must request them within VOTE_WINDOW ms before they execute.
-const VOTE_COMMANDS = new Set(['revertvm', 'restartvm', 'voteban']);
-const VOTE_ALIAS = { revert: 'revertvm', restart: 'restartvm' };
-const VOTE_THRESHOLD_KEY = {
-  revertvm: 'revertVMVoteThreshold',
-  restartvm: 'restartVMVoteThreshold',
-  voteban: 'votebanVoteThreshold',
-};
-const VOTE_WINDOW = 60000;
-const votes = new Map();
+const HELP = buildHelp();
 
 // Shadowban state: lowercased author -> expiry timestamp (ms).
 const shadowbans = new Map();
@@ -89,18 +52,6 @@ function isRateLimited(author, role) {
 // once either executes, the other is blocked for this long too.
 const VM_OP_COOLDOWN_MS = 15000;
 let lastVmOpAt = 0;
-
-function voteFor(name, author, threshold) {
-  const now = Date.now();
-  let v = votes.get(name);
-  if (!v || v.until < now) {
-    v = { by: new Set(), until: now + VOTE_WINDOW };
-    votes.set(name, v);
-  }
-  if (v.by.has(author)) return null;
-  v.by.add(author);
-  return v.by.size;
-}
 
 // Typing speed knobs. Per putScancodes call costs ~12ms, so batching many
 // chars per call is the real speed lever (one PDM-queue insert per code, no
@@ -208,26 +159,10 @@ function whenIdle() {
   return new Promise((r) => idleWaiters.push(r));
 }
 
-function parseChatCommands(text) {
-  const tokens = text.split(/\s+/).filter(Boolean);
-  const cmds = [];
-  let cur = null;
-  for (const t of tokens) {
-    if (t.startsWith('!')) {
-      if (cur) cmds.push(cur);
-      cur = { cmd: t, args: [] };
-    } else if (cur) {
-      cur.args.push(t);
-    }
-  }
-  if (cur) cmds.push(cur);
-  return cmds;
-}
-
 async function runImport(name, depth = 0) {
   if (depth > 3) throw new Error('import recursion too deep');
   const file = path.join(IMPORTS_DIR, name.endsWith('.txt') ? name : `${name}.txt`);
-  if (!fs.existsSync(file)) throw new Error(`no macro '${name}' in imports/`);
+  if (!fs.existsSync(file)) throw new Error(`no macro '${name}' in macros/`);
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
   for (const raw of lines) {
     const line = raw.trim();
@@ -240,28 +175,11 @@ async function runImport(name, depth = 0) {
   }
 }
 
-// Merge consecutive shift-free chars into bursts of <= max chars (their codes
-// are independent [make,break] pairs). Shift groups stay alone so the shift
-// press/release order inside a char is never disturbed.
-function burstGroups(groups, max) {
-  const bursts = [];
-  let cur = [];
-  let n = 0;
-  for (const g of groups) {
-    const shift = g.length > 2;
-    if (n > 0 && (shift || n >= max)) { bursts.push(cur); cur = []; n = 0; }
-    cur.push(...g);
-    n++;
-    if (!shift && n >= max) { bursts.push(cur); cur = []; n = 0; }
-  }
-  if (cur.length) bursts.push(cur);
-  return bursts;
-}
-
 async function execCommand(text, opts = {}) {
   const match = text.trim().match(/^!([a-zA-Z]+)\s?([\s\S]*)$/);
   if (!match) return { executed: false, hidden: true };
-  const name = match[1].toLowerCase();
+  const typed = match[1].toLowerCase();
+  const name = ALIASES[typed] || typed;
   const arg = match[2].trim();
   switch (name) {
     case 'key': {
@@ -278,7 +196,7 @@ async function execCommand(text, opts = {}) {
       await bridge.call('type', { groups: bursts, delay: TYPE_DELAY });
       return { executed: true };
     }
-    case 'send': case 'sendm': {
+    case 'send': {
       const cap = settings.typing?.maxLength ?? 0;
       if (cap > 0 && arg.length > cap) {
         throw new Error(`!send text is too long (${arg.length} chars, max ${cap})`);
@@ -302,15 +220,15 @@ async function execCommand(text, opts = {}) {
       if (!Number.isNaN(ms)) await sleep(Math.min(Math.max(ms, minMs), maxMs));
       return { executed: true };
     }
-    case 'start': case 'startvm': {
-      let name = active;
-      if (!name) {
+    case 'startvm': {
+      let vm = active;
+      if (!vm) {
         const vms = await bridge.call('listMachines');
         const idled = vms.find((v) => v.name && (v.realName || '').toLowerCase() !== 'running');
-        name = (idled || vms.find((v) => v.name) || {}).name;
-        if (!name) throw new Error('no VMs found to start');
+        vm = (idled || vms.find((v) => v.name) || {}).name;
+        if (!vm) throw new Error('no VMs found to start');
       }
-      const res = await bridge.call('start', { name }, 240000);
+      const res = await bridge.call('start', { name: vm }, 240000);
       active = res.name;
       if (!res.launched) {
         log.warn(`${res.name} is already active [${res.stateName}] - nothing to start`);
@@ -342,28 +260,27 @@ async function execCommand(text, opts = {}) {
       return { executed: true };
     }
     case 'lclick': case 'rclick': {
-      await bridge.call('mouseclick', { button: name === 'rclick' ? 'right' : 'left' });
+      await bridge.call('mouseclick', { button: typed === 'rclick' ? 'right' : 'left' });
       return { executed: true };
     }
-    case 'restart': case 'restartvm':
-    case 'revert': case 'revertvm': {
+    case 'restartvm': case 'revertvm': {
       // one shared cooldown for both ops: a revert right after a restart is
       // just as disruptive as back-to-back reverts. Chat spam protection
       // only - the CLI operator can always bypass it.
       if (!opts.bypassCooldown) {
         const since = Date.now() - lastVmOpAt;
         if (since < VM_OP_COOLDOWN_MS) {
-          throw new Error(`!${name} is on cooldown - retry in ${Math.ceil((VM_OP_COOLDOWN_MS - since) / 1000)}s`);
+          throw new Error(`!${typed} is on cooldown - retry in ${Math.ceil((VM_OP_COOLDOWN_MS - since) / 1000)}s`);
         }
       }
-      const res = await bridge.call(name.startsWith('restart') ? 'restart' : 'revert', {}, 240000);
+      const res = await bridge.call(name === 'restartvm' ? 'restart' : 'revert', {}, 240000);
       lastVmOpAt = Date.now();
       active = res.name;
       // The VM is coming back fresh: any commands that piled up while the op
       // ran would just drain into a brand-new state (or a VM that's mid-boot).
       // Dump them so nothing queued survives a restart/revert.
       clearExecQueue();
-      log.ok(`${name.startsWith('restart') ? 'restarted' : 'reverted'} ${res.name} [${res.stateName}]`);
+      log.ok(`${name === 'restartvm' ? 'restarted' : 'reverted'} ${res.name} [${res.stateName}]`);
       return { executed: true };
     }
     default:
@@ -465,31 +382,6 @@ async function ensureActive() {
 // ---- live chat ----
 let liveAbort = null;
 
-// Merged message+result line: chat line and outcome in one, so a busy chat
-// can never leave a result floating under the wrong message. Full per-command
-// badges when the line stays readable, count+failures when it would get too
-// long (long !type chains).
-const MAX_RESULT_LINE = 150;
-function buildResult(message, author, badges, ok, total, ms, skipped) {
-  const allOk = ok === badges.length;
-  const line = (r) => `@${author} : ${message} → ${r}`;
-  const actions = (n) => `${n} action${n === 1 ? '' : 's'}`;
-  const full = allOk
-    ? `${badges.join(' ')} - ${actions(badges.length)} in ${ms}ms`
-    : `${badges.join(' ')} - ${ok}/${total} in ${ms}ms${skipped ? ` (${skipped} skipped)` : ''}`;
-  if (line(full).length <= MAX_RESULT_LINE) return { text: full, ok: allOk };
-  if (allOk) return { text: `✓ ${ok}/${total} in ${ms}ms`, ok: true };
-  let fails = badges.filter((b) => b.startsWith('[✗'))
-    .map((b) => b.slice(3, -1))
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .join('; ');
-  if (fails.length > 90) fails = fails.slice(0, 90) + '…';
-  return {
-    text: `✗ ${ok}/${total}${skipped ? ` (${skipped} skipped)` : ''} in ${ms}ms${fails ? ` - ${fails}` : ''}`,
-    ok: false,
-  };
-}
-
 function onChatMessage(msg) {
   const author = msg.author.name.replace(/^@/, '');
   // Shadowbanned chatters: message is hidden, nothing executes. They see
@@ -560,7 +452,7 @@ function onChatMessage(msg) {
   // once enough distinct chatters have asked within the vote window.
   for (const c of cmds) {
     const typedName = c.cmd.slice(1).toLowerCase();
-    const name = VOTE_ALIAS[typedName] || typedName;
+    const name = ALIASES[typedName] || typedName;
     if (!VOTE_COMMANDS.has(name)) continue;
     if (name === 'voteban') {
       const target = c.args.join(' ').trim().replace(/^@/, '');
@@ -576,13 +468,13 @@ function onChatMessage(msg) {
         ? `[VOTE-BAN] @${author} started !voteban @${target}, vote ${n}/${threshold}`
         : `[VOTE-BAN] @${author} voted !voteban @${target}, vote ${n}/${threshold}`);
       if (n < threshold) continue;
-      votes.delete(vkey);
+      dropVote(vkey);
       const dur = settings.voting?.votebanDurationSeconds ?? 300;
       banAuthor(target, dur);
       log.ok(`@${target} is shadowbanned for ${dur}s - will expire in ${dur}s`);
       continue;
     }
-    const threshold = settings.voting?.[VOTE_THRESHOLD_KEY[name]] ?? 2;
+    const threshold = settings.voting?.[COMMANDS[name].thresholdKey] ?? 2;
     const n = voteFor(name, author, threshold);
     if (n === null) continue;
     const vtag = `[VOTE-${name.toUpperCase()}]`;
@@ -590,7 +482,7 @@ function onChatMessage(msg) {
       ? `${vtag} @${author} started !${typedName}, vote ${n}/${threshold}`
       : `${vtag} @${author} voted !${typedName}, vote ${n}/${threshold}`);
     if (n < threshold) continue;
-    votes.delete(name);
+    dropVote(name);
     log.ok(`${vtag} !${typedName} triggered by ${n} votes`);
     const t0 = Date.now();
     // Priority lane: a vote-passed VM op must not wait behind a backlog of

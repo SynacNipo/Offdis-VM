@@ -47,6 +47,17 @@ More details for everything above: **[[wiki]](https://github.com/SynacNipo/Offdi
 
 Every session's console output is saved automatically to `logs/` (a timestamped file) when you exit (Ctrl+C) or run `!live stop`.
 
+## Development
+
+Zero dependencies means there's nothing to install. Run the `node:test` suite and a syntax check of every source file:
+
+```
+npm test
+npm run check
+```
+
+CI (GitHub Actions) runs both on Windows with Node 18/20/22 for every push and pull request.
+
 ## Credits
 
 Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`).

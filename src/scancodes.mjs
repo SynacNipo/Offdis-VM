@@ -160,6 +160,24 @@ export function textToGroups(text) {
   return groups;
 }
 
+// Merge consecutive shift-free chars into bursts of <= max chars (their codes
+// are independent [make,break] pairs). Shift groups stay alone so the shift
+// press/release order inside a char is never disturbed.
+export function burstGroups(groups, max) {
+  const bursts = [];
+  let cur = [];
+  let n = 0;
+  for (const g of groups) {
+    const shift = g.length > 2;
+    if (n > 0 && (shift || n >= max)) { bursts.push(cur); cur = []; n = 0; }
+    cur.push(...g);
+    n++;
+    if (!shift && n >= max) { bursts.push(cur); cur = []; n = 0; }
+  }
+  if (cur.length) bursts.push(cur);
+  return bursts;
+}
+
 export function keyNames() {
   return Object.keys(KEY).sort();
 }

@@ -7,7 +7,9 @@
     "offdisvm": "src/cli.mjs"
   },
   "scripts": {
-    "start": "node src/cli.mjs"
+    "start": "node src/cli.mjs",
+    "test": "node --test",
+    "check": "node --check src/cli.mjs && node --check src/bridge.mjs && node --check src/commands.mjs && node --check src/livechat.mjs && node --check src/log.mjs && node --check src/prompt.mjs && node --check src/scancodes.mjs && node --check test/cli.test.mjs && node --check test/commands.test.mjs && node --check test/scancodes.test.mjs"
   },
   "engines": {
     "node": ">=18"
