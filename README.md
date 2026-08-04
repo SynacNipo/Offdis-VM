@@ -49,7 +49,6 @@ Every session's console output is saved automatically to `logs/` (a timestamped 
 
 ## Credits
 
-Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`) - custom-built for OffdisVM.
+Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`).
 
-Enjoying the script? No pressure at all, but if you'd like to help others find it, feel free to share the repo: https://github.com/SynacNipo/Offdis-VM
-You can mention me on your YouTube description or just the repo if you feeling generous.
+Enjoying the script? Sharing the repo or linking it in your YouTube description helps others find it: https://github.com/SynacNipo/Offdis-VM
