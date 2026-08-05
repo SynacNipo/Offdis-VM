@@ -1,4 +1,4 @@
-// Zero-dependency raw-mode terminal: line prompt, history, async output
+// Raw-mode terminal: line prompt, history, async output
 // interleaving, and an arrow-key menu. Replaces node:readline so live chat
 // output can print safely while the user is typing.
 

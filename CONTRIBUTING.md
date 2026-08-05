@@ -1,6 +1,6 @@
 # Contributing to OffdisVM
 
-Thanks for wanting to help! OffdisVM is a zero-dependency Node.js console that drives VirtualBox through the Main API (PowerShell COM bridge), with YouTube live-chat command control. This guide covers local setup, testing, and submitting changes.
+Thanks for wanting to help! OffdisVM is a Node.js console that drives VirtualBox through the Main API (PowerShell COM bridge), with YouTube live-chat command control. This guide covers local setup, testing, and submitting changes.
 
 ## Table of contents
 
@@ -46,7 +46,7 @@ logs/                Automatic session logs (gitignored)
    cd Offdis-VM
    ```
 
-2. **No `npm install` is needed** — the project is zero-dependency. There are no packages to download and no `node_modules`.
+2. **No `npm install` is needed** — the project has no `node_modules` and that's intentional; keep it that way.
 
 3. Create a VirtualBox VM if you don't have one (any OS; `Windows-7-7601` is used in examples and some tests).
 
@@ -107,7 +107,7 @@ An empty output means `bridge.ps1` parses cleanly.
 ## Coding conventions
 
 - **ESM only.** Import/export (`import`/`export`), never `require`. Node 18+.
-- **Zero runtime dependencies.** Don't add npm packages; if you think one is unavoidable, open an issue first so we can discuss it.
+- **No npm packages / no `node_modules`.** Don't add dependencies; if you think one is unavoidable, open an issue first so we can discuss it.
 - **No code comments unless they add real value.** Prefer self-explanatory names; use a short comment only for a non-obvious why (the codebase already does this, e.g. scancode/PS2 caveats).
 - **Match existing style:** 2-space indent, lowercase functions, `Single quotes` for strings, `const` by default.
 - **Bridge protocol:** add any new op in `src/bridge.ps1` (the `switch ($op)` block) and call it from `src/cli.mjs` via `bridge.call('op', { args })`. Keep the JSON payloads simple.

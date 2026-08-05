@@ -13,7 +13,7 @@ Node.js console that controls VirtualBox VMs through the VirtualBox Main API (vi
 * [Node.js](https://nodejs.org/) 18 or newer
 * A VM created in VirtualBox (settings.json, snapshots, etc. are all regular VirtualBox features)
 
-## Install (no npm install needed - zero dependencies)
+## Install (no npm install needed)
 
 1. Click the green **Code** button on this page.
 2. **Download ZIP** and extract it anywhere.
@@ -49,7 +49,7 @@ Every session's console output is saved automatically to `logs/` (a timestamped 
 
 ## Development
 
-Zero dependencies means there's nothing to install. Run a syntax check of every source file:
+There's nothing to install. Run a syntax check of every source file:
 
 ```
 npm run check
@@ -59,7 +59,7 @@ CI (GitHub Actions) runs it on Windows with Node 18/20/22 for every push and pul
 
 ## Credits
 
-Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`). The DOM fallback (`FallbackDOMcontent/fallback-chat.mjs`) is a zero-dependency Chrome DevTools Protocol scraper - see [the wiki](https://github.com/SynacNipo/Offdis-VM/wiki/Live-Chat-Fallback) for details.
+Live chat polling uses the vendored `modern-youtubechat` project (`modern-youtubechat/dist/client.js`). The DOM fallback (`FallbackDOMcontent/fallback-chat.mjs`) is a Chrome DevTools Protocol scraper using only Node's built-ins - see [the wiki](https://github.com/SynacNipo/Offdis-VM/wiki/Live-Chat-Fallback) for details.
 
 Enjoying the script? Sharing the repo or linking it in your YouTube description helps others find it: https://github.com/SynacNipo/Offdis-VM
 

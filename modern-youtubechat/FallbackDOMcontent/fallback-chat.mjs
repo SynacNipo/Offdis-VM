@@ -5,8 +5,8 @@
 // session. This module is Plan B: it launches a real browser (Chrome/Edge)
 // onto the live chat popout page and scrapes the chat DOM over the Chrome
 // DevTools Protocol (CDP), emitting only NEW messages (deduped by id, first
-// poll primes the baseline). Uses the Node 22+ built-in WebSocket - zero
-// dependencies.
+// poll primes the baseline). Uses the Node 22+ built-in WebSocket - no npm
+// packages, just Node's built-ins.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
