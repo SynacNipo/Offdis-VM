@@ -178,6 +178,31 @@ const SCRAPE_EXPR = `(() => {
   return JSON.stringify({ ready: !!list, path: location.pathname, url: location.href, title: document.title, items: out });
 })()`;
 
+// Set OFFDISVM_DEBUG_DOM=1 to dump raw author/badge markup on the prime
+// poll - used to keep the role/tag extraction in sync with YouTube's DOM.
+const DEBUG_EXPR = `(() => {
+  const items = [...document.querySelectorAll('yt-live-chat-text-message-renderer, yt-live-chat-paid-message-renderer, yt-live-chat-paid-sticker-renderer, yt-live-chat-membership-item-renderer')];
+  const probe = (el) => {
+    const authorEl = el.querySelector('#author-name');
+    const photoEl = el.querySelector('#author-photo');
+    const header = authorEl ? (authorEl.closest('div[dir="auto"]') || authorEl.parentElement) : null;
+    const photoLink = photoEl ? photoEl.querySelector('a') : null;
+    return {
+      id: el.id,
+      kind: el.tagName,
+      author: authorEl ? authorEl.textContent.trim() : '',
+      authorClass: authorEl ? authorEl.className : '',
+      authorStyle: authorEl ? authorEl.getAttribute('style') : '',
+      headerHtml: header ? header.outerHTML.slice(0, 900) : '',
+      photoLink: photoLink ? photoLink.getAttribute('href') : null,
+      badges: [...el.querySelectorAll('[id*="badge"], [class*="badge"], [title*="Verified"], [alt*="Verified"], [aria-label="Owner"], [aria-label="Moderator"]')].map((b) => ({ id: b.id, cls: String(b.className).slice(0, 50), aria: b.getAttribute('aria-label'), title: b.title || b.getAttribute('title'), alt: b.getAttribute('alt'), tag: b.tagName })).slice(0, 4),
+    };
+  };
+  const first = items.slice(0, 2).map(probe);
+  const badgeish = items.filter((el) => el.querySelector('[id*="badge"], [class*="badge"], [title*="Verified"], [alt*="Verified"], [aria-label="Owner"], [aria-label="Moderator"]')).slice(0, 2).map(probe);
+  return JSON.stringify({ count: items.length, first, badgeish });
+})()`;
+
 // The studio popout bounces unauthenticated sessions to a sign-in page -
 // bounce it onto the public youtube.com popout, which needs no login.
 async function ensureChatPage(cdp, videoId, cfg) {
@@ -341,6 +366,11 @@ export async function runDomLoop(videoId, onMessage, isAborted, onConnected, opt
             if (Date.now() - readyAt >= cfg.settleMs) {
               primed = true;
               log.info('live chat fallback: primed - new messages only from here');
+              if (process.env.OFFDISVM_DEBUG_DOM) {
+                try {
+                  log.info(`live chat fallback debug: ${await cdp.evaluate(DEBUG_EXPR)}`);
+                } catch { /* non-fatal */ }
+              }
               for (const item of parsed.items || []) {
                 if (item.id) seen.add(item.id);
               }
