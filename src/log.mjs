@@ -46,6 +46,31 @@ const DEFAULT_SETTINGS = {
     maxRetries: 12,
     // linear backoff multiplier (ms) for transient failures
     backoffBaseMs: 1500,
+    // DOM-scrape fallback used when the fetch client is hard rate-limited (429)
+    fallback: {
+      // false = give up (and disconnect) instead of opening a browser
+      enabled: true,
+      // false = visible browser window (you can watch the chat), true = headless
+      headless: false,
+      // 'auto' = first Chrome/Edge found, or an explicit .exe path
+      chromePath: 'auto',
+      // popout page opened by the fallback; the videoId is appended to this
+      baseUrl: 'https://www.youtube.com/live_chat?is_popout=1&v=',
+      // studio popouts redirect to sign-in when the browser isn't logged in -
+      // bounce to the public youtube.com popout instead
+      publicFallback: true,
+      // persistent Chrome profile folder ('' = throwaway temp profile).
+      // Set this to a folder to keep cookies/login across fallback sessions -
+      // needed for subscribers-only / members-only chat (sign in once in the
+      // visible browser window, then restart the fallback).
+      profileDir: '',
+      // ms between DOM scrapes
+      pollMs: 1500,
+      // max wait for the chat panel to appear
+      loadTimeoutMs: 30000,
+      // max wait for the browser to expose its debugging port/page
+      connectTimeoutMs: 15000,
+    },
   },
 };
 

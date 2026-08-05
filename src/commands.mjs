@@ -34,7 +34,7 @@ export const COMMANDS = {
   },
   key: {
     chat: true, bare: true,
-    help: '  key <key>        send a key:  key enter - key ctrl+alt+del - key ? = all keys',
+    help: '  key <key>        send a key:  key enter - key ctrl+alt+del - key tty2 - key ? = keys & linux presets',
   },
   type: {
     chat: true, bare: true,

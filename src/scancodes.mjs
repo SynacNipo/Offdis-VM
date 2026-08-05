@@ -27,6 +27,7 @@ export const KEY = {
   np5: S(0x4C), np6: S(0x4D), npplus: S(0x4E), np1: S(0x4F), np2: S(0x50),
   np3: S(0x51), np0: S(0x52), npdot: S(0x53),
   f11: S(0x57), f12: S(0x58),
+  pause: S([0xE1, 0x1D, 0x45], [0xE1, 0x9D, 0xC5]), break: S([0xE0, 0x46], [0xE0, 0xC6]),
   rctrl: S([0xE0, 0x1D]), ralt: S([0xE0, 0x38]),
   up: S([0xE0, 0x48]), down: S([0xE0, 0x50]), left: S([0xE0, 0x4B]), right: S([0xE0, 0x4D]),
   home: S([0xE0, 0x47]), end: S([0xE0, 0x4F]), pgup: S([0xE0, 0x49]), pgdn: S([0xE0, 0x51]),
@@ -42,7 +43,7 @@ export const ALIAS = {
   arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right',
   capslock: 'caps', pageup: 'pgup', pagedown: 'pgdn',
   printscreen: 'prtsc', printscr: 'prtsc', apps: 'menu',
-  lwin: 'win', super: 'win', hyphen: 'minus', dash: 'minus', equal: 'equals',
+  lwin: 'win', super: 'win', meta: 'win', sysrq: 'prtsc', hyphen: 'minus', dash: 'minus', equal: 'equals',
   grave: 'backtick', tilde: 'backtick', apostrophe: 'quote',
   '[': 'lbracket', ']': 'rbracket', '\\': 'backslash', '.': 'period', ',': 'comma',
   '/': 'slash', ';': 'semicolon', "'": 'quote', '-': 'minus', '=': 'equals', '`': 'backtick',
@@ -51,8 +52,33 @@ export const ALIAS = {
   numpadminus: 'npminus', numpadplus: 'npplus', numpaddot: 'npdot',
 };
 
+// Named Linux guest combos: common shortcuts across GNOME/KDE/Xfce/etc.
+// so `key tty2` / `combo term` type as the full chord instead of failing
+// with 'unknown key'. Every preset name can be used like any key chord.
+export const LINUX = {};
+for (let i = 1; i <= 12; i++) LINUX[`tty${i}`] = `ctrl+alt+f${i}`; // TTY switch (f1/f7 = back to GUI)
+Object.assign(LINUX, {
+  term: 'ctrl+alt+t',        // terminal (most distros)
+  run: 'alt+f2',             // run-command dialog (GNOME/KDE)
+  overview: 'super',         // activities / app launcher
+  apps: 'super+a',           // show applications grid
+  lock: 'super+l',           // lock screen
+  showdesktop: 'super+d',    // show desktop
+  screenshot: 'prtsc',       // screenshot tool
+  winshot: 'alt+prtsc',      // screenshot of focused window
+  areashot: 'shift+prtsc',   // screenshot of selected area
+  killx: 'ctrl+alt+backspace', // force restart display server (if enabled)
+  close: 'alt+f4',           // close window
+  switchwin: 'alt+tab',      // switch windows
+  wsleft: 'ctrl+alt+left',   // previous workspace
+  wsright: 'ctrl+alt+right', // next workspace
+  reboot: 'ctrl+alt+del',    // power/logout dialog (systemd)
+});
+
 export function chordParts(chord) {
-  const parts = chord.trim().toLowerCase().split(/[+-]+/).map((s) => s.trim()).filter(Boolean);
+  const preset = chord.trim().toLowerCase();
+  if (LINUX[preset]) return chordParts(LINUX[preset]);
+  const parts = preset.split(/[+-]+/).map((s) => s.trim()).filter(Boolean);
   if (!parts.length) throw new Error('no key given');
   const keys = [];
   for (const p of parts) {
@@ -180,4 +206,8 @@ export function burstGroups(groups, max) {
 
 export function keyNames() {
   return Object.keys(KEY).sort();
+}
+
+export function presetNames() {
+  return Object.keys(LINUX);
 }

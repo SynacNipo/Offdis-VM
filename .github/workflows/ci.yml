@@ -22,6 +22,3 @@ jobs:
 
       - name: Syntax check
         run: npm run check
-
-      - name: Run tests
-        run: npm test

@@ -1,5 +1,6 @@
 import { initLiveChat, pollChat } from '../modern-youtubechat/dist/client.js';
 import { log, settings } from './log.mjs';
+import { runDomLoop } from '../modern-youtubechat/FallbackDOMcontent/fallback-chat.mjs';
 
 export { initLiveChat, pollChat };
 
@@ -37,33 +38,65 @@ async function withRetry(what, fn) {
   }
 }
 
+// The fetch path was killed by persistent transient failures (429/5xx) - hand
+// the whole session over to the DOM fallback before giving up. `enabled: false`
+// in settings keeps the old hard-fail behavior.
+async function fallbackToDom(videoId, onMessage, isAborted, onConnected, reason) {
+  const fb = settings.livechat?.fallback;
+  if (fb && fb.enabled === false) {
+    throw new Error(`live chat fetch failed (${reason}) and the DOM fallback is disabled`);
+  }
+  log.warn(`live chat: fetch path failing (${reason}) - switching to DOM fallback`);
+  return runDomLoop(videoId, onMessage, isAborted, onConnected);
+}
+
 export async function runLiveLoop(videoId, onMessage, isAborted, onConnected) {
   const cfg = settings.livechat ?? {};
   const fastMs = cfg.fastMs ?? 700;
   const idleMs = cfg.idleMs ?? 10000;
   const maxMs = cfg.maxMs ?? 6000;
 
-  let config = await withRetry('video page', () => initLiveChat(videoId));
+  let config;
+  try {
+    config = await withRetry('video page', () => initLiveChat(videoId));
+  } catch (err) {
+    // Rate-limited hard on the very first fetch - the fetch path is unusable
+    // for this stream, so the fallback takes over from the start.
+    if (transientStatus(err) !== null) {
+      return fallbackToDom(videoId, onMessage, isAborted, onConnected, err.message);
+    }
+    throw err;
+  }
   if (onConnected) onConnected(config.title, config.host);
   let primed = false;
   let lastMessageAt = Date.now();
   let interval = fastMs;
-  while (true) {
-    if (isAborted && isAborted()) return;
-    const result = await withRetry('poll', () => pollChat(config));
-    if (primed) {
-      if (result.messages.length) {
-        for (const msg of result.messages) onMessage(msg);
-        lastMessageAt = Date.now();
-        interval = fastMs;
+  try {
+    while (true) {
+      if (isAborted && isAborted()) return;
+      const result = await withRetry('poll', () => pollChat(config));
+      if (primed) {
+        if (result.messages.length) {
+          for (const msg of result.messages) onMessage(msg);
+          lastMessageAt = Date.now();
+          interval = fastMs;
+        }
+      } else {
+        primed = true;
       }
-    } else {
-      primed = true;
+      config = result.config;
+      if (Date.now() - lastMessageAt > idleMs && interval < maxMs) {
+        interval = Math.min(maxMs, Math.round(interval * 1.5));
+      }
+      await new Promise((r) => setTimeout(r, jitter(interval)));
     }
-    config = result.config;
-    if (Date.now() - lastMessageAt > idleMs && interval < maxMs) {
-      interval = Math.min(maxMs, Math.round(interval * 1.5));
+  } catch (err) {
+    // Only persistent transient (429/5xx) failures hand off to the fallback;
+    // stream-ended / auth / network errors still surface as real failures.
+    // onConnected already fired, so the fallback skips re-announcing.
+    if (transientStatus(err) !== null) {
+      return fallbackToDom(videoId, onMessage, isAborted, null, err.message);
     }
-    await new Promise((r) => setTimeout(r, jitter(interval)));
+    throw err;
   }
 }

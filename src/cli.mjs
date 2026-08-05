@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Bridge } from './bridge.mjs';
-import { chordParts, textToGroups, keyNames, burstGroups } from './scancodes.mjs';
+import { chordParts, textToGroups, keyNames, burstGroups, presetNames } from './scancodes.mjs';
 import { log, setWriter, settings, saveLogLines } from './log.mjs';
 import { Terminal } from './prompt.mjs';
 import { runLiveLoop } from './livechat.mjs';
@@ -550,11 +550,11 @@ async function handle(line) {
     if (name === 'key') {
       const arg = line.slice(4).trim();
       if (!arg) {
-        term.write('usage: !key <key>   e.g. !key enter - !key ctrl+alt+del - !key ? = all keys');
+        term.write('usage: !key <key>   e.g. !key enter - !key ctrl+alt+del - !key tty2 - !key ? = keys & linux presets');
         return;
       }
       if (arg === '?') {
-        term.write('supported keys:\n  ' + keyNames().join(' '));
+        term.write('supported keys:\n  ' + keyNames().join(' ') + '\n\nlinux presets:\n  ' + presetNames().join(' '));
         return;
       }
     }
@@ -597,11 +597,11 @@ async function handle(line) {
     if (bare === 'key') {
       const arg = cmdArgs.join(' ');
       if (!arg) {
-        term.write('usage: key <key>   e.g. key enter - key ctrl+alt+del - key ? = all keys');
+        term.write('usage: key <key>   e.g. key enter - key ctrl+alt+del - key tty2 - key ? = keys & linux presets');
         return;
       }
       if (arg === '?') {
-        term.write('supported keys:\n  ' + keyNames().join(' '));
+        term.write('supported keys:\n  ' + keyNames().join(' ') + '\n\nlinux presets:\n  ' + presetNames().join(' '));
         return;
       }
     }
