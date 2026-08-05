@@ -42,16 +42,17 @@ const DEFAULT_SETTINGS = {
     maxMs: 6000,
     // random jitter fraction added to each poll delay
     jitter: 0.25,
-    // transient (429/5xx) retries before giving up
-    maxRetries: 12,
+    // transient (429/5xx) retries before giving up (then the DOM fallback
+    // takes over)
+    maxRetries: 5,
     // linear backoff multiplier (ms) for transient failures
     backoffBaseMs: 1500,
     // DOM-scrape fallback used when the fetch client is hard rate-limited (429)
     fallback: {
       // false = give up (and disconnect) instead of opening a browser
       enabled: true,
-      // false = visible browser window (you can watch the chat), true = headless
-      headless: false,
+      // true = hidden browser, false = visible window (you can watch the chat)
+      headless: true,
       // 'auto' = first Chrome/Edge found, or an explicit .exe path
       chromePath: 'auto',
       // popout page opened by the fallback; the videoId is appended to this
@@ -70,6 +71,10 @@ const DEFAULT_SETTINGS = {
       loadTimeoutMs: 30000,
       // max wait for the browser to expose its debugging port/page
       connectTimeoutMs: 15000,
+      // ms after which the fallback starts probing whether the fetch API
+      // recovered; on success the browser is closed and the session silently
+      // returns to fast fetch polling. 0 = never (stay on DOM until !live stop)
+      tryFetchMs: 120000,
     },
   },
 };

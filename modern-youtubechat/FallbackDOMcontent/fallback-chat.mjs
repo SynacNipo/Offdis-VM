@@ -12,10 +12,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { log, settings } from '../../src/log.mjs';
+import { initLiveChat, pollChat } from '../dist/client.js';
 
 const DEFAULTS = {
   enabled: true,
-  headless: false,
+  headless: true,
   chromePath: 'auto',
   baseUrl: 'https://www.youtube.com/live_chat?is_popout=1&v=',
   publicFallback: true,
@@ -27,6 +28,11 @@ const DEFAULTS = {
   pollMs: 1500,
   loadTimeoutMs: 30000,
   connectTimeoutMs: 15000,
+  // ms after which the fallback starts probing whether the fetch path
+  // recovered; as soon as a probe succeeds the browser is killed and the
+  // session silently returns to fast fetch polling. 0 = never (stay on DOM
+  // until !live stop).
+  tryFetchMs: 120000,
 };
 
 const KNOWN_BROWSERS = {
@@ -277,14 +283,17 @@ class Cdp {
 
 // Main entry: a poll loop over the chat DOM. Only messages whose id has never
 // been seen are emitted, and the first read (prime) sets the baseline so the
-// pre-existing backlog is never replayed.
-export async function runDomLoop(videoId, onMessage, isAborted, onConnected) {
+// pre-existing backlog is never replayed. Returns { switched: true } when the
+// fetch path recovered and the browser was closed; returns normally when the
+// session was aborted.
+export async function runDomLoop(videoId, onMessage, isAborted, onConnected, opts = {}) {
   if (typeof WebSocket === 'undefined') {
     throw new Error('DOM fallback needs Node 22+ (global WebSocket) - upgrade Node');
   }
-  const cfg = { ...DEFAULTS, ...(settings.livechat?.fallback ?? {}) };
+  const cfg = { ...DEFAULTS, ...(settings.livechat?.fallback ?? {}), ...opts };
   const launched = launchBrowser(videoId, cfg);
   let cdp = null;
+  let lastFetchProbe = 0;
   try {
     const port = await waitForPort(launched.profile, cfg.connectTimeoutMs);
     if (!port) throw new Error('browser never exposed a debugging port');
@@ -301,6 +310,17 @@ export async function runDomLoop(videoId, onMessage, isAborted, onConnected) {
     let notReadySince = null;
     while (true) {
       if (isAborted && isAborted()) return;
+      // The DOM browser is only meant to bridge a rate-limit storm - as soon
+      // as the fetch API answers again, kill the browser and hand back.
+      if (cfg.tryFetchMs > 0 && Date.now() - lastFetchProbe > cfg.tryFetchMs) {
+        lastFetchProbe = Date.now();
+        try {
+          const fbConfig = await initLiveChat(videoId);
+          await pollChat(fbConfig);
+          log.info('live chat fallback: fetch path recovered - closing browser, returning to fetch');
+          return { switched: true };
+        } catch { /* still rate-limited - keep scraping DOM */ }
+      }
       let parsed = null;
       try { parsed = JSON.parse(await cdp.evaluate(SCRAPE_EXPR) || 'null'); } catch { /* page busy */ }
       if (parsed) {
