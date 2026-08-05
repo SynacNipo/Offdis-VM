@@ -33,6 +33,11 @@ const DEFAULTS = {
   // session silently returns to fast fetch polling. 0 = never (stay on DOM
   // until !live stop).
   tryFetchMs: 120000,
+  // the chat panel appears BEFORE YouTube hydrates the recent backlog into
+  // it - priming on an empty panel then lets the whole backlog flood out as
+  // "new". Wait this long after the panel appears before priming so the
+  // backlog settles and gets swallowed by the baseline.
+  settleMs: 4000,
 };
 
 const KNOWN_BROWSERS = {
@@ -307,6 +312,7 @@ export async function runDomLoop(videoId, onMessage, isAborted, onConnected, opt
 
     const seen = new Set();
     let primed = false;
+    let readyAt = 0;
     let notReadySince = null;
     while (true) {
       if (isAborted && isAborted()) return;
@@ -326,14 +332,25 @@ export async function runDomLoop(videoId, onMessage, isAborted, onConnected, opt
       if (parsed) {
         if (parsed.ready) {
           notReadySince = null;
+          if (!readyAt) readyAt = Date.now();
           if (!primed) {
-            primed = true;
-            log.info('live chat fallback: primed - new messages only from here');
-          }
-          for (const item of parsed.items || []) {
-            if (!item.id || seen.has(item.id)) continue;
-            seen.add(item.id);
-            onMessage(toChatMessage(item));
+            // The panel appears before YouTube hydrates the recent backlog
+            // into it - hold off priming until the backlog has settled, and
+            // swallow the DOM contents of the prime poll itself as baseline
+            // (never emit on the prime read, or the whole backlog floods out).
+            if (Date.now() - readyAt >= cfg.settleMs) {
+              primed = true;
+              log.info('live chat fallback: primed - new messages only from here');
+              for (const item of parsed.items || []) {
+                if (item.id) seen.add(item.id);
+              }
+            }
+          } else {
+            for (const item of parsed.items || []) {
+              if (!item.id || seen.has(item.id)) continue;
+              seen.add(item.id);
+              onMessage(toChatMessage(item));
+            }
           }
         } else if (!notReadySince) {
           notReadySince = Date.now();

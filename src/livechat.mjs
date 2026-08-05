@@ -20,7 +20,7 @@ function jitter(ms) {
 }
 
 async function withRetry(what, fn) {
-  const max = settings.livechat?.maxRetries ?? 12;
+  const max = settings.livechat?.maxRetries ?? 3;
   const base = settings.livechat?.backoffBaseMs ?? 1500;
   let fails = 0;
   for (;;) {
@@ -32,7 +32,10 @@ async function withRetry(what, fn) {
       fails++;
       if (fails > max) throw err;
       const backoff = Math.min(10000, base * fails);
-      log.warn(`live chat: ${what} ${code}, retrying in ${backoff / 1000}s (${fails}/${max})`);
+      const hint = fails === 2
+        ? ' - if this fails, switching to the DOM fallback'
+        : fails === max ? ' - last retry, then switching to the DOM fallback' : '';
+      log.warn(`live chat: ${what} ${code}, retrying in ${backoff / 1000}s (${fails}/${max})${hint}`);
       await new Promise((r) => setTimeout(r, backoff));
     }
   }

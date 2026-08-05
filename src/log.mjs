@@ -44,7 +44,7 @@ const DEFAULT_SETTINGS = {
     jitter: 0.25,
     // transient (429/5xx) retries before giving up (then the DOM fallback
     // takes over)
-    maxRetries: 5,
+    maxRetries: 3,
     // linear backoff multiplier (ms) for transient failures
     backoffBaseMs: 1500,
     // DOM-scrape fallback used when the fetch client is hard rate-limited (429)
@@ -75,6 +75,11 @@ const DEFAULT_SETTINGS = {
       // recovered; on success the browser is closed and the session silently
       // returns to fast fetch polling. 0 = never (stay on DOM until !live stop)
       tryFetchMs: 120000,
+      // the chat panel appears before YouTube hydrates the recent backlog
+      // into it - wait this long after the panel appears before priming, so
+      // the backlog settles and is swallowed by the baseline instead of
+      // flooding the console as "new" messages
+      settleMs: 4000,
     },
   },
 };
